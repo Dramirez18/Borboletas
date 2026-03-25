@@ -98,6 +98,59 @@ VALUES ('Admin Borboletas', 'admin@borboletas.com', 'admin')
 ON CONFLICT (email) DO NOTHING;`,
     createdAt: '2026-03-24',
   },
+  {
+    id: '004_create_bugreport_table',
+    title: 'Crear tabla BugReport',
+    description: 'Tabla para reportes de bugs del admin con prioridad y estado',
+    sql: `CREATE TABLE IF NOT EXISTS "BugReport" (
+  id SERIAL PRIMARY KEY,
+  title TEXT NOT NULL,
+  description TEXT NOT NULL DEFAULT '',
+  status TEXT NOT NULL DEFAULT 'open',
+  priority TEXT NOT NULL DEFAULT 'medium',
+  "reportedBy" TEXT NOT NULL,
+  page TEXT,
+  steps TEXT,
+  "createdAt" TIMESTAMPTZ DEFAULT NOW(),
+  "updatedAt" TIMESTAMPTZ DEFAULT NOW(),
+  "resolvedAt" TIMESTAMPTZ
+);
+
+CREATE INDEX IF NOT EXISTS "BugReport_status_idx" ON "BugReport"(status);
+ALTER TABLE "BugReport" DISABLE ROW LEVEL SECURITY;`,
+    createdAt: '2026-03-24',
+  },
+  {
+    id: '005_client_data_policy',
+    title: 'Columnas de política de datos en Client',
+    description: 'Agrega acceptedDataPolicy y policyAcceptedAt para cumplir Ley 1581 de 2012',
+    sql: `ALTER TABLE "Client" ADD COLUMN IF NOT EXISTS "acceptedDataPolicy" BOOLEAN DEFAULT FALSE;
+ALTER TABLE "Client" ADD COLUMN IF NOT EXISTS "policyAcceptedAt" TIMESTAMP;`,
+    createdAt: '2026-03-24',
+  },
+  {
+    id: '006_visit_counter',
+    title: 'Contador de visitas al sitio',
+    description: 'Tabla SiteStats con función atómica increment_visits() para contar visitas',
+    sql: `CREATE TABLE IF NOT EXISTS "SiteStats" (
+  id TEXT PRIMARY KEY DEFAULT 'main',
+  "visitCount" INTEGER NOT NULL DEFAULT 0,
+  "updatedAt" TIMESTAMPTZ DEFAULT NOW()
+);
+ALTER TABLE "SiteStats" DISABLE ROW LEVEL SECURITY;
+INSERT INTO "SiteStats" (id, "visitCount") VALUES ('main', 0) ON CONFLICT (id) DO NOTHING;
+
+CREATE OR REPLACE FUNCTION increment_visits()
+RETURNS INTEGER AS $$
+DECLARE new_count INTEGER;
+BEGIN
+  UPDATE "SiteStats" SET "visitCount" = "visitCount" + 1, "updatedAt" = NOW() WHERE id = 'main';
+  SELECT "visitCount" INTO new_count FROM "SiteStats" WHERE id = 'main';
+  RETURN new_count;
+END;
+$$ LANGUAGE plpgsql;`,
+    createdAt: '2026-03-24',
+  },
 ];
 
 /**

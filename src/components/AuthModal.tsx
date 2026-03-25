@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
-import { X, ArrowLeft, Mail, User as UserIcon, Phone, MapPin, ShoppingBag, Heart, Truck, Tag } from 'lucide-react';
+import { X, ArrowLeft, Mail, User as UserIcon, Phone, MapPin, ShoppingBag, Heart, Truck, Tag, FileCheck } from 'lucide-react';
 import type { User } from '../types';
 import { supabase } from '../lib/supabase';
 
@@ -20,6 +20,8 @@ export default function AuthModal({ isOpen, onClose, user, onLogin, onLogout }: 
   const [loginError, setLoginError] = useState('');
   const [isLoggingIn, setIsLoggingIn] = useState(false);
   const [isRegistering, setIsRegistering] = useState(false);
+  const [acceptedPolicy, setAcceptedPolicy] = useState(false);
+  const [showPolicyModal, setShowPolicyModal] = useState(false);
   const [registrationForm, setRegistrationForm] = useState<Partial<User>>({
     name: '', email: '', phone: '', address: '', city: 'Bogota',
   });
@@ -77,8 +79,10 @@ export default function AuthModal({ isOpen, onClose, user, onLogin, onLogout }: 
           email: formData.email,
           phone: formData.phone || '',
           address: formData.address || '',
-          city: formData.city || 'Bogota',
+          city: formData.city || 'Bogotá',
           role: 'user',
+          acceptedDataPolicy: acceptedPolicy,
+          policyAcceptedAt: acceptedPolicy ? new Date().toISOString() : null,
           updatedAt: new Date().toISOString(),
         }, { onConflict: 'email' });
 
@@ -106,9 +110,10 @@ export default function AuthModal({ isOpen, onClose, user, onLogin, onLogout }: 
     onClose();
   };
 
-  if (!isOpen) return null;
+  if (!isOpen && !showPolicyModal) return null;
 
   return (
+    <>
     <AnimatePresence>
       <motion.div
         initial={{ opacity: 0 }}
@@ -271,11 +276,24 @@ export default function AuthModal({ isOpen, onClose, user, onLogin, onLogout }: 
                   </div>
                 </div>
 
+                {/* Política de datos */}
+                <label className="flex items-start gap-3 cursor-pointer">
+                  <input type="checkbox" checked={acceptedPolicy} onChange={e => setAcceptedPolicy(e.target.checked)}
+                    className="mt-0.5 w-4 h-4 rounded border-slate-300 text-brand-pink focus:ring-brand-pink/30 cursor-pointer" />
+                  <span className="text-xs text-slate-500 leading-relaxed">
+                    Acepto la{' '}
+                    <button type="button" onClick={() => setShowPolicyModal(true)} className="text-brand-pink font-semibold hover:underline">
+                      Política de Tratamiento de Datos Personales
+                    </button>
+                    {' '}de acuerdo con la Ley 1581 de 2012.
+                  </span>
+                </label>
+
                 {loginError && (
                   <p className="text-sm text-red-500 bg-red-50 p-3 rounded-xl">{loginError}</p>
                 )}
 
-                <button type="submit" disabled={isRegistering || !registrationForm.name || !registrationForm.email}
+                <button type="submit" disabled={isRegistering || !registrationForm.name || !registrationForm.email || !acceptedPolicy}
                   className="w-full py-3 bg-brand-pink text-white rounded-xl font-semibold hover:bg-brand-pink-dark disabled:opacity-50 transition-colors cursor-pointer">
                   {isRegistering ? 'Creando cuenta...' : 'Crear cuenta'}
                 </button>
@@ -324,5 +342,71 @@ export default function AuthModal({ isOpen, onClose, user, onLogin, onLogout }: 
         </motion.div>
       </motion.div>
     </AnimatePresence>
+
+    {/* Modal de Política de Datos */}
+    {showPolicyModal && (
+      <div className="fixed inset-0 z-[80] flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm" onClick={() => setShowPolicyModal(false)}>
+        <div className="bg-white rounded-2xl shadow-2xl w-full max-w-lg max-h-[85vh] overflow-y-auto" onClick={e => e.stopPropagation()}>
+          <div className="sticky top-0 bg-white border-b border-slate-100 px-6 py-4 flex items-center justify-between rounded-t-2xl">
+            <div className="flex items-center gap-3">
+              <div className="w-10 h-10 bg-blue-100 rounded-xl flex items-center justify-center">
+                <FileCheck size={18} className="text-blue-600" />
+              </div>
+              <h3 className="font-bold text-lg text-slate-800">Política de Datos</h3>
+            </div>
+            <button onClick={() => setShowPolicyModal(false)} className="p-2 hover:bg-slate-100 rounded-lg cursor-pointer"><X size={18} /></button>
+          </div>
+          <div className="p-6 text-sm text-slate-600 space-y-4 leading-relaxed">
+            <section>
+              <h4 className="font-bold text-slate-800 mb-1">1. Responsable del tratamiento</h4>
+              <p><strong>Borboletas</strong> — Detalles hechos con amor<br/>Bogotá, Colombia<br/>Correo: sonillapilla123@gmail.com</p>
+            </section>
+            <section>
+              <h4 className="font-bold text-slate-800 mb-1">2. Datos personales recopilados</h4>
+              <p>Nombre completo, correo electrónico, número de teléfono y dirección de entrega.</p>
+            </section>
+            <section>
+              <h4 className="font-bold text-slate-800 mb-1">3. Finalidad del tratamiento</h4>
+              <ul className="list-disc pl-5 space-y-1">
+                <li>Gestión y seguimiento de pedidos</li>
+                <li>Comunicación sobre el estado de tu compra</li>
+                <li>Envío de promociones y novedades (solo con tu consentimiento)</li>
+                <li>Mejora continua de nuestros servicios</li>
+              </ul>
+            </section>
+            <section>
+              <h4 className="font-bold text-slate-800 mb-1">4. Derechos del titular</h4>
+              <p>De acuerdo con la <strong>Ley 1581 de 2012</strong> y el <strong>Decreto 1377 de 2013</strong>, tienes derecho a:</p>
+              <ul className="list-disc pl-5 space-y-1 mt-1">
+                <li>Conocer, actualizar y rectificar tus datos personales</li>
+                <li>Solicitar prueba de la autorización otorgada</li>
+                <li>Ser informado sobre el uso que se le da a tus datos</li>
+                <li>Revocar la autorización y/o solicitar la supresión de tus datos</li>
+                <li>Presentar quejas ante la SIC por infracciones a la ley</li>
+              </ul>
+            </section>
+            <section>
+              <h4 className="font-bold text-slate-800 mb-1">5. Cómo ejercer tus derechos</h4>
+              <p>Envía un correo a <strong>sonillapilla123@gmail.com</strong> con el asunto "Datos Personales". Responderemos en un plazo máximo de 15 días hábiles.</p>
+            </section>
+            <section>
+              <h4 className="font-bold text-slate-800 mb-1">6. Seguridad</h4>
+              <p>Implementamos medidas técnicas y organizativas para proteger tus datos personales contra acceso no autorizado, pérdida o alteración.</p>
+            </section>
+            <section>
+              <h4 className="font-bold text-slate-800 mb-1">7. Vigencia</h4>
+              <p>Esta política es efectiva a partir del 24 de marzo de 2026. Los datos se conservarán mientras exista la relación comercial o hasta que solicites su eliminación.</p>
+            </section>
+          </div>
+          <div className="sticky bottom-0 bg-white border-t border-slate-100 px-6 py-4 rounded-b-2xl">
+            <button onClick={() => { setAcceptedPolicy(true); setShowPolicyModal(false); }}
+              className="w-full py-3 bg-gradient-to-r from-brand-pink to-brand-purple text-white rounded-xl font-semibold hover:shadow-lg transition-all cursor-pointer">
+              Acepto la política de datos
+            </button>
+          </div>
+        </div>
+      </div>
+    )}
+    </>
   );
 }

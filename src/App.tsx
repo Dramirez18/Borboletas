@@ -3,6 +3,7 @@ import type { Product, CartItem, User } from './types';
 import type { ProductCategory, NavidadSubcategory } from './types';
 import { SAMPLE_PRODUCTS, CATEGORIES, NAVIDAD_SUBCATEGORIES } from './constants';
 import { supabase } from './lib/supabase';
+import { Users } from 'lucide-react';
 import Navbar from './components/Navbar';
 import HeroCarousel from './components/HeroCarousel';
 import DiscountBanner from './components/DiscountBanner';
@@ -65,6 +66,21 @@ export default function App() {
     window.history.pushState({ view: 'home' }, '', window.location.pathname);
 
     return () => window.removeEventListener('popstate', handlePopState);
+  }, []);
+
+  // Contador de visitas
+  const [visitCount, setVisitCount] = useState(0);
+
+  useEffect(() => {
+    if (!supabase) return;
+    supabase.rpc('increment_visits').then(({ data, error }) => {
+      if (!error && typeof data === 'number') {
+        setVisitCount(data);
+      } else {
+        supabase!.from('SiteStats').select('visitCount').eq('id', 'main').single()
+          .then(({ data: row }) => { if (row) setVisitCount((row as { visitCount: number }).visitCount); });
+      }
+    });
   }, []);
 
   // Persistir usuario en localStorage
@@ -307,6 +323,23 @@ export default function App() {
         <>
           <HeroCarousel onNavigate={navigateTo} />
           <DiscountBanner />
+
+          {/* Contador de visitas */}
+          {visitCount > 0 && (
+            <div className="max-w-[1400px] mx-auto px-4 sm:px-8 lg:px-12 pt-6">
+              <div className="flex justify-center">
+                <div className="inline-flex items-center gap-3 bg-white/80 backdrop-blur-sm px-6 py-3 rounded-2xl shadow-sm border border-brand-pink-light/30">
+                  <div className="w-10 h-10 bg-gradient-to-br from-brand-pink to-brand-purple rounded-xl flex items-center justify-center">
+                    <Users className="w-5 h-5 text-white" />
+                  </div>
+                  <div>
+                    <p className="text-2xl md:text-3xl font-bold text-brand-dark tabular-nums">{visitCount.toLocaleString('es-CO')}</p>
+                    <p className="text-[10px] text-brand-gray uppercase tracking-wider font-semibold">visitas al sitio</p>
+                  </div>
+                </div>
+              </div>
+            </div>
+          )}
 
           {/* Ofertas especiales */}
           {discountedProducts.length > 0 && (

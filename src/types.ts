@@ -72,6 +72,23 @@ export interface OrderItem {
   customizationNotes?: string;
 }
 
+export type BugStatus = 'open' | 'in_progress' | 'resolved' | 'closed';
+export type BugPriority = 'low' | 'medium' | 'high' | 'critical';
+
+export interface BugReport {
+  id: number;
+  title: string;
+  description: string;
+  status: BugStatus;
+  priority: BugPriority;
+  reportedBy: string;
+  page?: string;
+  steps?: string;
+  createdAt: string;
+  updatedAt: string;
+  resolvedAt?: string;
+}
+
 export interface CategoryInfo {
   key: ProductCategory;
   label: string;

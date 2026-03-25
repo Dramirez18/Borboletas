@@ -51,5 +51,45 @@ INSERT INTO "Client" (name, email, role)
 VALUES ('Admin Borboletas', 'admin@borboletas.com', 'admin')
 ON CONFLICT (email) DO NOTHING;
 
--- 8. Verificar
-SELECT 'Tablas Product y Client creadas exitosamente' AS resultado;
+-- 8. Tabla BugReport
+CREATE TABLE IF NOT EXISTS "BugReport" (
+  id SERIAL PRIMARY KEY,
+  title TEXT NOT NULL,
+  description TEXT NOT NULL DEFAULT '',
+  status TEXT NOT NULL DEFAULT 'open',
+  priority TEXT NOT NULL DEFAULT 'medium',
+  "reportedBy" TEXT NOT NULL,
+  page TEXT,
+  steps TEXT,
+  "createdAt" TIMESTAMPTZ DEFAULT NOW(),
+  "updatedAt" TIMESTAMPTZ DEFAULT NOW(),
+  "resolvedAt" TIMESTAMPTZ
+);
+CREATE INDEX IF NOT EXISTS "BugReport_status_idx" ON "BugReport"(status);
+ALTER TABLE "BugReport" DISABLE ROW LEVEL SECURITY;
+
+-- 9. Columnas de política de datos en Client
+ALTER TABLE "Client" ADD COLUMN IF NOT EXISTS "acceptedDataPolicy" BOOLEAN DEFAULT FALSE;
+ALTER TABLE "Client" ADD COLUMN IF NOT EXISTS "policyAcceptedAt" TIMESTAMP;
+
+-- 10. Contador de visitas
+CREATE TABLE IF NOT EXISTS "SiteStats" (
+  id TEXT PRIMARY KEY DEFAULT 'main',
+  "visitCount" INTEGER NOT NULL DEFAULT 0,
+  "updatedAt" TIMESTAMPTZ DEFAULT NOW()
+);
+ALTER TABLE "SiteStats" DISABLE ROW LEVEL SECURITY;
+INSERT INTO "SiteStats" (id, "visitCount") VALUES ('main', 0) ON CONFLICT (id) DO NOTHING;
+
+CREATE OR REPLACE FUNCTION increment_visits()
+RETURNS INTEGER AS $$
+DECLARE new_count INTEGER;
+BEGIN
+  UPDATE "SiteStats" SET "visitCount" = "visitCount" + 1, "updatedAt" = NOW() WHERE id = 'main';
+  SELECT "visitCount" INTO new_count FROM "SiteStats" WHERE id = 'main';
+  RETURN new_count;
+END;
+$$ LANGUAGE plpgsql;
+
+-- 11. Verificar
+SELECT 'Todas las tablas creadas exitosamente' AS resultado;

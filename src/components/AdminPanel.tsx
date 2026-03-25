@@ -1,6 +1,6 @@
 import { useState, useMemo } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
-import type { Product, ProductCategory, NavidadSubcategory } from '../types';
+import type { Product, ProductCategory, NavidadSubcategory, BugReport, BugStatus, BugPriority } from '../types';
 import { CATEGORIES, NAVIDAD_SUBCATEGORIES, formatPrice } from '../constants';
 import { supabase } from '../lib/supabase';
 import {
@@ -14,7 +14,7 @@ import {
 import {
   ArrowLeft, Plus, Pencil, Trash2, Eye, EyeOff, Save, X, Database,
   BarChart3, Package, Search, ChevronUp, ChevronDown, ChevronRight,
-  CheckCircle2, Clock, Copy, Check, AlertTriangle, DollarSign,
+  CheckCircle2, Clock, Copy, Check, AlertTriangle, DollarSign, Bug,
 } from 'lucide-react';
 
 interface AdminPanelProps {
@@ -26,7 +26,7 @@ interface AdminPanelProps {
   onBack: () => void;
 }
 
-type AdminTab = 'dashboard' | 'products' | 'sqlhistory';
+type AdminTab = 'dashboard' | 'products' | 'bugs' | 'sqlhistory';
 type SortField = 'name' | 'price' | 'category' | 'discountPercent';
 type SortDir = 'asc' | 'desc';
 
@@ -74,6 +74,13 @@ export default function AdminPanel({
   const [appliedMap, setAppliedMap] = useState(() => getAppliedMigrations());
   const [copiedId, setCopiedId] = useState<string | null>(null);
   const [migrationStatus, setMigrationStatus] = useState<Record<string, string>>({});
+
+  // Bug Reports
+  const [bugs, setBugs] = useState<BugReport[]>([]);
+  const [bugsLoading, setBugsLoading] = useState(false);
+  const [bugFilter, setBugFilter] = useState<string>('all');
+  const [showNewBugForm, setShowNewBugForm] = useState(false);
+  const [newBug, setNewBug] = useState({ title: '', description: '', priority: 'medium' as BugPriority, page: '', steps: '' });
 
   // ========== STATS (must be before early return to maintain hook order) ==========
   const stats = useMemo(() => {
@@ -212,6 +219,49 @@ export default function AdminPanel({
     setTimeout(() => setCopiedId(null), 2000);
   };
 
+  // ========== BUG REPORT HANDLERS ==========
+  const loadBugs = async () => {
+    if (!supabase) return;
+    setBugsLoading(true);
+    const { data, error } = await supabase.from('BugReport').select('*').order('createdAt', { ascending: false });
+    if (!error && data) setBugs(data as BugReport[]);
+    setBugsLoading(false);
+  };
+
+  const createBug = async () => {
+    if (!supabase || !newBug.title) return;
+    setBugsLoading(true);
+    const { error } = await supabase.from('BugReport').insert({
+      title: newBug.title,
+      description: newBug.description,
+      priority: newBug.priority,
+      reportedBy: 'admin',
+      page: newBug.page || null,
+      steps: newBug.steps || null,
+    });
+    if (error) { alert(`Error: ${error.message}`); }
+    else {
+      setNewBug({ title: '', description: '', priority: 'medium', page: '', steps: '' });
+      setShowNewBugForm(false);
+      await loadBugs();
+    }
+    setBugsLoading(false);
+  };
+
+  const updateBugStatus = async (id: number, newStatus: BugStatus) => {
+    if (!supabase) return;
+    const updates: Record<string, unknown> = { status: newStatus, updatedAt: new Date().toISOString() };
+    if (newStatus === 'resolved') updates.resolvedAt = new Date().toISOString();
+    await supabase.from('BugReport').update(updates).eq('id', id);
+    setBugs(prev => prev.map(b => b.id === id ? { ...b, status: newStatus, ...updates } as BugReport : b));
+  };
+
+  const nextStatus: Record<string, BugStatus> = { open: 'in_progress', in_progress: 'resolved', resolved: 'closed' };
+  const statusLabels: Record<string, string> = { open: 'Abierto', in_progress: 'En progreso', resolved: 'Resuelto', closed: 'Cerrado' };
+  const priorityLabels: Record<string, string> = { low: 'Baja', medium: 'Media', high: 'Alta', critical: 'Crítica' };
+  const priorityColors: Record<string, string> = { low: 'bg-blue-100 text-blue-700', medium: 'bg-amber-100 text-amber-700', high: 'bg-orange-100 text-orange-700', critical: 'bg-red-100 text-red-700' };
+  const statusColors: Record<string, string> = { open: 'bg-red-100 text-red-700', in_progress: 'bg-amber-100 text-amber-700', resolved: 'bg-emerald-100 text-emerald-700', closed: 'bg-slate-100 text-slate-500' };
+
   // ========== AUTH (after all hooks) ==========
   const handlePinSubmit = (e: React.FormEvent) => {
     e.preventDefault();
@@ -268,6 +318,7 @@ export default function AdminPanel({
   const tabs: { key: AdminTab; label: string; icon: React.ReactNode; badge?: string }[] = [
     { key: 'dashboard', label: 'Dashboard', icon: <BarChart3 size={16} /> },
     { key: 'products', label: 'Productos', icon: <Package size={16} />, badge: `${products.length}` },
+    { key: 'bugs', label: 'Bug Reports', icon: <Bug size={16} />, badge: bugs.filter(b => b.status === 'open').length > 0 ? `${bugs.filter(b => b.status === 'open').length}` : undefined },
     { key: 'sqlhistory', label: 'SQL History', icon: <Database size={16} /> },
   ];
 
@@ -307,7 +358,7 @@ export default function AdminPanel({
         {tabs.map(tab => (
           <button
             key={tab.key}
-            onClick={() => setAdminTab(tab.key)}
+            onClick={() => { setAdminTab(tab.key); if (tab.key === 'bugs') loadBugs(); }}
             className={`flex items-center gap-2 px-5 py-2.5 rounded-xl text-sm font-semibold whitespace-nowrap transition-all cursor-pointer ${
               adminTab === tab.key
                 ? 'bg-amber-500 text-white shadow-md shadow-amber-200'
@@ -517,6 +568,109 @@ export default function AdminPanel({
                 <p className="text-sm">No se encontraron productos</p>
               </div>
             )}
+          </div>
+        </div>
+      )}
+
+      {/* ======== BUG REPORTS TAB ======== */}
+      {adminTab === 'bugs' && (
+        <div className="space-y-4">
+          <div className="bg-white rounded-2xl border border-slate-100 shadow-sm p-6">
+            <div className="flex items-center justify-between mb-4">
+              <div>
+                <div className="flex items-center gap-2 mb-1">
+                  <Bug size={20} className="text-red-500" />
+                  <h3 className="font-bold text-lg text-slate-800">Bug Reports</h3>
+                </div>
+                <p className="text-sm text-slate-400">{bugs.length} reportes &middot; {bugs.filter(b => b.status === 'open').length} abiertos</p>
+              </div>
+              <div className="flex items-center gap-2">
+                <select value={bugFilter} onChange={e => setBugFilter(e.target.value)}
+                  className="px-3 py-1.5 rounded-lg border border-slate-200 text-sm bg-white cursor-pointer">
+                  <option value="all">Todos</option>
+                  <option value="open">Abiertos</option>
+                  <option value="in_progress">En progreso</option>
+                  <option value="resolved">Resueltos</option>
+                  <option value="closed">Cerrados</option>
+                </select>
+                <button onClick={() => loadBugs()} className="px-3 py-1.5 bg-slate-100 text-slate-600 rounded-lg text-sm hover:bg-slate-200 cursor-pointer">Recargar</button>
+                <button onClick={() => setShowNewBugForm(true)}
+                  className="flex items-center gap-1.5 px-4 py-1.5 bg-red-500 text-white rounded-lg text-sm font-semibold hover:bg-red-600 cursor-pointer">
+                  <Plus size={14} /> Nuevo Bug
+                </button>
+              </div>
+            </div>
+
+            {/* New Bug Form */}
+            <AnimatePresence>
+              {showNewBugForm && (
+                <motion.div initial={{ height: 0, opacity: 0 }} animate={{ height: 'auto', opacity: 1 }} exit={{ height: 0, opacity: 0 }} className="overflow-hidden">
+                  <div className="border border-red-200 rounded-xl p-4 mb-4 bg-red-50/30 space-y-3">
+                    <div className="flex items-center justify-between">
+                      <h4 className="font-semibold text-sm text-slate-700">Nuevo reporte de bug</h4>
+                      <button onClick={() => setShowNewBugForm(false)} className="p-1 hover:bg-slate-100 rounded-lg cursor-pointer"><X size={16} /></button>
+                    </div>
+                    <input type="text" placeholder="Título del bug *" value={newBug.title} onChange={e => setNewBug(prev => ({ ...prev, title: e.target.value }))}
+                      className="w-full px-3 py-2 rounded-lg border border-slate-200 text-sm focus:outline-none focus:ring-2 focus:ring-red-400/50" />
+                    <textarea placeholder="Descripción detallada" value={newBug.description} onChange={e => setNewBug(prev => ({ ...prev, description: e.target.value }))} rows={2}
+                      className="w-full px-3 py-2 rounded-lg border border-slate-200 text-sm focus:outline-none focus:ring-2 focus:ring-red-400/50 resize-none" />
+                    <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                      <select value={newBug.priority} onChange={e => setNewBug(prev => ({ ...prev, priority: e.target.value as BugPriority }))}
+                        className="px-3 py-2 rounded-lg border border-slate-200 text-sm bg-white cursor-pointer">
+                        <option value="low">Baja</option>
+                        <option value="medium">Media</option>
+                        <option value="high">Alta</option>
+                        <option value="critical">Crítica</option>
+                      </select>
+                      <input type="text" placeholder="Página/Sección" value={newBug.page} onChange={e => setNewBug(prev => ({ ...prev, page: e.target.value }))}
+                        className="px-3 py-2 rounded-lg border border-slate-200 text-sm" />
+                      <input type="text" placeholder="Pasos para reproducir" value={newBug.steps} onChange={e => setNewBug(prev => ({ ...prev, steps: e.target.value }))}
+                        className="px-3 py-2 rounded-lg border border-slate-200 text-sm" />
+                    </div>
+                    <button onClick={createBug} disabled={!newBug.title || bugsLoading}
+                      className="px-4 py-2 bg-red-500 text-white rounded-lg text-sm font-semibold hover:bg-red-600 disabled:opacity-50 cursor-pointer">
+                      {bugsLoading ? 'Creando...' : 'Crear reporte'}
+                    </button>
+                  </div>
+                </motion.div>
+              )}
+            </AnimatePresence>
+
+            {/* Bug List */}
+            <div className="space-y-3">
+              {bugs.filter(b => bugFilter === 'all' || b.status === bugFilter).map(bug => (
+                <div key={bug.id} className="border border-slate-100 rounded-xl p-4 hover:bg-slate-50/50 transition-colors">
+                  <div className="flex items-start justify-between gap-3">
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-center gap-2 mb-1 flex-wrap">
+                        <span className={`text-[10px] px-2 py-0.5 rounded-full font-bold ${priorityColors[bug.priority]}`}>{priorityLabels[bug.priority]}</span>
+                        <span className={`text-[10px] px-2 py-0.5 rounded-full font-bold ${statusColors[bug.status]}`}>{statusLabels[bug.status]}</span>
+                        <span className="text-[10px] text-slate-400">#{bug.id}</span>
+                      </div>
+                      <p className="font-semibold text-sm text-slate-800">{bug.title}</p>
+                      {bug.description && <p className="text-xs text-slate-500 mt-1">{bug.description}</p>}
+                      <div className="flex items-center gap-3 mt-2 text-[10px] text-slate-400">
+                        <span>Por: {bug.reportedBy}</span>
+                        {bug.page && <span>Página: {bug.page}</span>}
+                        <span>{new Date(bug.createdAt).toLocaleDateString('es-CO')}</span>
+                      </div>
+                    </div>
+                    {nextStatus[bug.status] && (
+                      <button onClick={() => updateBugStatus(bug.id, nextStatus[bug.status])}
+                        className="shrink-0 px-3 py-1.5 bg-slate-100 text-slate-600 rounded-lg text-xs font-semibold hover:bg-amber-100 hover:text-amber-700 cursor-pointer transition-colors">
+                        → {statusLabels[nextStatus[bug.status]]}
+                      </button>
+                    )}
+                  </div>
+                </div>
+              ))}
+              {bugs.filter(b => bugFilter === 'all' || b.status === bugFilter).length === 0 && (
+                <div className="text-center py-8 text-slate-400">
+                  <Bug size={28} className="mx-auto mb-2 opacity-30" />
+                  <p className="text-sm">{bugs.length === 0 ? 'No hay bugs reportados' : 'Sin resultados para este filtro'}</p>
+                </div>
+              )}
+            </div>
           </div>
         </div>
       )}

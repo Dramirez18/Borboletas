@@ -31,6 +31,7 @@ export interface Product {
   featured: boolean;
   active: boolean;
   createdAt: string;
+  updatedAt?: string;
 }
 
 export interface CartItem {

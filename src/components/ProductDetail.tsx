@@ -2,7 +2,7 @@ import { useState, useRef } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import {
   X, ZoomIn, ZoomOut, MessageCircle, ShoppingCart, Sparkles,
-  Sofa, TreePine, Building2, Heart, Star, HandHeart, Truck, Palette,
+  Heart, Star, HandHeart, Truck, Palette,
 } from 'lucide-react';
 import type { Product } from '../types';
 import { formatPrice, getDiscountedPrice, COMPANY } from '../constants';
@@ -17,7 +17,7 @@ interface ProductDetailProps {
 const AMBIENTS = [
   { id: 'none', label: 'Original', emoji: '🔍', bg: 'bg-gradient-to-br from-gray-50 to-white' },
   { id: 'living', label: 'En tu sala', emoji: '🛋️', bg: 'bg-gradient-to-br from-amber-50 via-orange-50 to-yellow-50' },
-  { id: 'tree', label: 'Con el arbol', emoji: '🎄', bg: 'bg-gradient-to-br from-green-50 via-emerald-50 to-lime-50' },
+  { id: 'tree', label: 'Con el árbol', emoji: '🎄', bg: 'bg-gradient-to-br from-green-50 via-emerald-50 to-lime-50' },
   { id: 'office', label: 'En la oficina', emoji: '🏢', bg: 'bg-gradient-to-br from-blue-50 via-slate-50 to-indigo-50' },
 ];
 
@@ -262,7 +262,7 @@ export default function ProductDetail({ product, isOpen, onClose, onAddToCart }:
                             Este producto es personalizable
                           </h3>
                           <p className="text-sm text-brand-gray leading-relaxed">
-                            Elige colores, nombres, detalles y mas.
+                            Elige colores, nombres, detalles y más.
                             Escribenos por WhatsApp y creamos algo unico para ti.
                           </p>
                         </div>

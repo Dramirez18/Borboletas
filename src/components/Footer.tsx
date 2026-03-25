@@ -76,10 +76,10 @@ export default function Footer() {
           <div>
             <h3 className="font-heading font-semibold text-lg mb-4">Sobre Nosotros</h3>
             <div className="space-y-2 text-sm text-white/70">
-              <p>Todo hecho a mano con amor y dedicacion</p>
+              <p>Todo hecho a mano con amor y dedicación</p>
               <p>Materiales de alta calidad</p>
               <p>Productos personalizables</p>
-              <p>Envios a domicilio en Bogota</p>
+              <p>Envíos a domicilio en Bogotá</p>
               <p>Calidad y servicio garantizados</p>
             </div>
           </div>

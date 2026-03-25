@@ -8,8 +8,8 @@
 
 - **Frontend:** React 19 + TypeScript + Vite 8 + Tailwind CSS 4 (plugin Vite) + Motion (Framer Motion)
 - **Icons:** Lucide React
-- **Base de datos:** Supabase PostgreSQL (pendiente de configurar)
-- **Auth:** Pendiente — estructura de roles ya definida (admin/user)
+- **Base de datos:** Supabase PostgreSQL (`ythsgjjawqzvhewenqex`) — conectado
+- **Auth:** PIN simple para admin (doble-click en logo activa modo admin)
 - **Deploy:** Vercel (pendiente)
 - **Imagenes:** Hospedadas en postimg.cc
 
@@ -17,13 +17,17 @@
 
 ```
 src/
-  App.tsx                 -- Componente principal con routing, estado global, vistas
+  App.tsx                 -- Componente principal con routing, estado global, vistas, CRUD handlers
   main.tsx                -- Entry point React
   index.css               -- Tailwind theme (colores brand, fuentes Poppins/Inter)
   types.ts                -- Product, CartItem, User, Order, CategoryInfo, etc.
-  constants.ts            -- COMPANY info, CATEGORIES, NAVIDAD_SUBCATEGORIES, 75 productos
+  constants.ts            -- COMPANY info, CATEGORIES, NAVIDAD_SUBCATEGORIES, 75 productos (fallback)
+  lib/
+    supabase.ts           -- Cliente Supabase (null si no hay env vars)
+    migrations.ts         -- Sistema de migraciones SQL + seed de productos
   components/
-    Navbar.tsx             -- Nav sticky con logo, busqueda, carrito, auth, menu mobile
+    AdminPanel.tsx         -- Panel CRUD admin con tabs (dashboard, productos, migraciones)
+    Navbar.tsx             -- Nav sticky con logo, busqueda, carrito, toggle admin, menu mobile
     HeroCarousel.tsx       -- 6 slides automaticos (Navidad, Halloween, Lapices, Tejidos, Ofertas)
     DiscountBanner.tsx     -- Banner animado de beneficios (descuentos, personalizacion, envios)
     CategorySlider.tsx     -- Slider horizontal por categoria con header gradiente tematico
@@ -79,17 +83,19 @@ Solo 2 roles. NO hay proveedores ni mayoristas.
 | **admin** | Panel CRUD productos, ver pedidos, gestionar descuentos |
 | **user** | Ver catalogo, carrito, checkout, historial |
 
-- **Auth:** Pendiente de implementar con Supabase
-- **Admin actual:** Por definir
+- **Auth:** PIN simple para admin (doble-click en logo -> ingresar PIN)
+- **Admin PIN:** Configurado en VITE_ADMIN_PIN (.env.local)
 
 ## Estado Actual del Proyecto
 
 - **Precios:** Todos los productos tienen precio = 0 (se muestra "Consultar precio")
-- **Backend:** No conectado — todos los datos son hardcoded en `constants.ts`
+- **Backend:** Supabase PostgreSQL conectado (`ythsgjjawqzvhewenqex`)
+- **Admin Panel:** CRUD completo para productos (crear, editar, activar/desactivar, eliminar)
 - **Deploy:** No desplegado aun
 - **Checkout:** Estructura creada pero sin funcionalidad completa
-- **Auth:** Estructura de roles definida, sin implementacion
+- **Auth:** PIN simple para admin, sin auth de usuarios
 - **Imagenes:** Todas las 75+ imagenes estan hospedadas en postimg.cc y cargando correctamente
+- **Migraciones:** Sistema de migraciones SQL integrado en el Admin Panel
 
 ## Comandos
 
@@ -113,20 +119,26 @@ npm run lint         # ESLint
 - Colores brand: pink (#E91E63), purple (#9C27B0), amber (#FFC107)
 - Idioma de la app: Espanol
 
-## Modelo de Datos (futuro Supabase)
+## Modelo de Datos (Supabase)
 
 ```sql
--- Categorias
-CREATE TYPE product_category AS ENUM (
-  'navidad', 'halloween', 'desayunos_sorpresa', 'lapices_cuadernos', 'tejidos'
+CREATE TABLE "Product" (
+  id TEXT PRIMARY KEY,
+  name TEXT NOT NULL,
+  description TEXT NOT NULL,
+  price INTEGER NOT NULL DEFAULT 0,
+  "discountPercent" INTEGER NOT NULL DEFAULT 0,
+  category TEXT NOT NULL,
+  subcategory TEXT,
+  images TEXT[] NOT NULL DEFAULT '{}',
+  customizable BOOLEAN NOT NULL DEFAULT false,
+  featured BOOLEAN NOT NULL DEFAULT false,
+  active BOOLEAN NOT NULL DEFAULT true,
+  "createdAt" TIMESTAMPTZ DEFAULT NOW(),
+  "updatedAt" TIMESTAMPTZ DEFAULT NOW()
 );
-
--- Subcategorias Navidad
-CREATE TYPE navidad_subcategory AS ENUM (
-  'noel', 'renos', 'osos_polares', 'munecos_nieve', 'pie_arbol_cojines'
-);
-
--- Tablas: Product, Client, Order, OrderItem
+-- RLS deshabilitado, acceso via anon key
+-- Futuro: Client, Order, OrderItem
 ```
 
 ## Reglas Operacionales para Agentes IA
@@ -134,7 +146,7 @@ CREATE TYPE navidad_subcategory AS ENUM (
 ### CRITICO — Aislamiento de proyectos
 - **NUNCA** usar herramientas MCP/nativas conectadas a otros proyectos sin confirmacion explicita
 - **NUNCA** asumir que un MCP Supabase conectado pertenece a este proyecto
-- Este proyecto **AUN NO tiene Supabase configurado** — no ejecutar queries
+- Supabase de Borboletas: `ythsgjjawqzvhewenqex` — este es el unico proyecto autorizado
 - Cada proyecto del usuario es completamente aislado a menos que el diga lo contrario
 - Proyectos hermanos: Entre Peces (`blqvfrqkzaudrdbxjovt`), Colombian Coffee (sin Supabase)
 
@@ -150,6 +162,7 @@ CREATE TYPE navidad_subcategory AS ENUM (
 1. Leer este CLAUDE.md al inicio de cada sesion
 2. Verificar `npx tsc --noEmit` antes y despues de cambios
 3. Usar preview server para verificar cambios visuales
-4. Los productos se administran en `src/constants.ts` hasta que se conecte Supabase
-5. Nuevos productos deben seguir la interfaz Product de `src/types.ts`
+4. Los productos se cargan desde Supabase con fallback a `src/constants.ts`
+5. Nuevos productos se crean desde el Admin Panel (doble-click en logo -> PIN)
 6. Imagenes nuevas subir a postimg.cc y usar la URL directa
+7. Las migraciones SQL se ejecutan desde Admin Panel > Base de Datos

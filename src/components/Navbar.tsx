@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { ShoppingCart, User, Search, Menu, X } from 'lucide-react';
+import { ShoppingCart, User, Search, Menu, X, Shield } from 'lucide-react';
 import type { CartItem } from '../types';
 import { COMPANY } from '../constants';
 
@@ -11,6 +11,7 @@ interface NavbarProps {
   currentView: string;
   onNavigate: (view: string) => void;
   user: { name: string; role: string } | null;
+  isAdmin?: boolean;
 }
 
 export default function Navbar({
@@ -21,6 +22,7 @@ export default function Navbar({
   currentView,
   onNavigate,
   user,
+  isAdmin,
 }: NavbarProps) {
   const [searchOpen, setSearchOpen] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
@@ -65,7 +67,7 @@ export default function Navbar({
           <div className="hidden md:flex items-center gap-6">
             {[
               { key: 'home', label: 'Inicio' },
-              { key: 'catalog', label: 'Catalogo' },
+              { key: 'catalog', label: 'Catálogo' },
             ].map((item) => (
               <button
                 key={item.key}
@@ -82,7 +84,7 @@ export default function Navbar({
           </div>
 
           {/* Actions */}
-          <div className="flex items-center gap-3">
+          <div className="flex items-center gap-2">
             {/* Search */}
             <button
               onClick={() => setSearchOpen(!searchOpen)}
@@ -104,24 +106,31 @@ export default function Navbar({
               )}
             </button>
 
-            {/* User */}
+            {/* User - muestra avatar con inicial si logueado, o icono si no */}
             <button
-              onClick={user ? () => onNavigate('profile') : onAuthClick}
-              className="p-2 rounded-full hover:bg-brand-pink-light/30 transition-colors cursor-pointer"
+              onClick={onAuthClick}
+              className="p-2 rounded-full hover:bg-brand-pink-light/30 transition-colors cursor-pointer relative"
             >
-              <User className="w-5 h-5 text-brand-dark" />
+              {user ? (
+                <div className="w-7 h-7 bg-brand-pink rounded-full flex items-center justify-center">
+                  <span className="text-white text-xs font-bold">{user.name.charAt(0).toUpperCase()}</span>
+                </div>
+              ) : (
+                <User className="w-5 h-5 text-brand-dark" />
+              )}
             </button>
 
-            {/* Admin */}
-            {user?.role === 'admin' && (
+            {/* Admin button - desktop */}
+            {isAdmin && (
               <button
                 onClick={() => onNavigate('admin')}
-                className={`text-xs font-semibold px-3 py-1.5 rounded-full transition-colors cursor-pointer ${
+                className={`hidden sm:flex items-center gap-1.5 text-xs font-semibold px-3 py-1.5 rounded-full transition-colors cursor-pointer ${
                   currentView === 'admin'
-                    ? 'bg-brand-purple text-white'
-                    : 'bg-brand-purple-light/30 text-brand-purple hover:bg-brand-purple hover:text-white'
+                    ? 'bg-amber-500 text-white shadow-md'
+                    : 'bg-amber-100 text-amber-700 hover:bg-amber-500 hover:text-white'
                 }`}
               >
+                <Shield className="w-3.5 h-3.5" />
                 Admin
               </button>
             )}
@@ -158,10 +167,23 @@ export default function Navbar({
         {/* Mobile menu */}
         {mobileMenuOpen && (
           <div className="md:hidden pb-4 border-t border-brand-pink-light/30">
-            <div className="flex flex-col gap-2 pt-3">
+            <div className="flex flex-col gap-1 pt-3">
+              {/* User info if logged in */}
+              {user && (
+                <div className="flex items-center gap-3 px-3 py-3 mb-2 bg-brand-pink-light/20 rounded-xl">
+                  <div className="w-10 h-10 bg-brand-pink rounded-full flex items-center justify-center">
+                    <span className="text-white font-bold">{user.name.charAt(0).toUpperCase()}</span>
+                  </div>
+                  <div>
+                    <p className="font-semibold text-sm text-brand-dark">{user.name}</p>
+                    <p className="text-xs text-brand-gray">{isAdmin ? 'Administrador' : 'Cliente'}</p>
+                  </div>
+                </div>
+              )}
+
               {[
-                { key: 'home', label: 'Inicio' },
-                { key: 'catalog', label: 'Catalogo' },
+                { key: 'home', label: 'Inicio', icon: '🏠' },
+                { key: 'catalog', label: 'Catálogo', icon: '🛍️' },
               ].map((item) => (
                 <button
                   key={item.key}
@@ -169,15 +191,46 @@ export default function Navbar({
                     onNavigate(item.key);
                     setMobileMenuOpen(false);
                   }}
-                  className={`text-left px-3 py-2 rounded-lg text-sm font-medium transition-colors cursor-pointer ${
+                  className={`text-left px-3 py-2.5 rounded-lg text-sm font-medium transition-colors cursor-pointer ${
                     currentView === item.key
                       ? 'bg-brand-pink-light/30 text-brand-pink'
                       : 'text-brand-dark hover:bg-brand-pink-light/20'
                   }`}
                 >
-                  {item.label}
+                  {item.icon} {item.label}
                 </button>
               ))}
+
+              {/* Admin option in hamburger menu */}
+              {isAdmin && (
+                <button
+                  onClick={() => {
+                    onNavigate('admin');
+                    setMobileMenuOpen(false);
+                  }}
+                  className={`flex items-center gap-2 text-left px-3 py-2.5 rounded-lg text-sm font-semibold transition-colors cursor-pointer ${
+                    currentView === 'admin'
+                      ? 'bg-amber-100 text-amber-700'
+                      : 'text-amber-600 hover:bg-amber-50'
+                  }`}
+                >
+                  <Shield className="w-4 h-4" />
+                  Administrador
+                </button>
+              )}
+
+              {/* Login/Profile button in menu */}
+              {!user && (
+                <button
+                  onClick={() => {
+                    onAuthClick();
+                    setMobileMenuOpen(false);
+                  }}
+                  className="text-left px-3 py-2.5 rounded-lg text-sm font-medium text-brand-pink hover:bg-brand-pink-light/20 cursor-pointer"
+                >
+                  👤 Iniciar sesión
+                </button>
+              )}
             </div>
           </div>
         )}

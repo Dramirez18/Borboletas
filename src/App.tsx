@@ -1,7 +1,8 @@
-import { useState, useCallback } from 'react';
+import { useState, useCallback, useEffect } from 'react';
 import type { Product, CartItem, User } from './types';
 import type { ProductCategory, NavidadSubcategory } from './types';
 import { SAMPLE_PRODUCTS, CATEGORIES, NAVIDAD_SUBCATEGORIES } from './constants';
+import { supabase } from './lib/supabase';
 import Navbar from './components/Navbar';
 import HeroCarousel from './components/HeroCarousel';
 import DiscountBanner from './components/DiscountBanner';
@@ -11,17 +12,189 @@ import Cart from './components/Cart';
 import Footer from './components/Footer';
 import WhatsAppButton from './components/WhatsAppButton';
 import ProductDetail from './components/ProductDetail';
+import AdminPanel from './components/AdminPanel';
+import AuthModal from './components/AuthModal';
 
 export default function App() {
   const [currentView, setCurrentView] = useState('home');
   const [cartItems, setCartItems] = useState<CartItem[]>([]);
   const [cartOpen, setCartOpen] = useState(false);
-  const [user] = useState<User | null>(null);
+  const [user, setUser] = useState<User | null>(() => {
+    try {
+      const saved = localStorage.getItem('borboletas_user');
+      return saved ? JSON.parse(saved) : null;
+    } catch { return null; }
+  });
+  const [authModalOpen, setAuthModalOpen] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedProduct, setSelectedProduct] = useState<Product | null>(null);
   const [detailOpen, setDetailOpen] = useState(false);
   const [activeCategory, setActiveCategory] = useState<ProductCategory | null>(null);
   const [activeSubcategory, setActiveSubcategory] = useState<NavidadSubcategory | null>(null);
+
+  // Supabase state
+  const [products, setProducts] = useState<Product[]>(SAMPLE_PRODUCTS);
+  const [isLoading, setIsLoading] = useState(true);
+  // Admin se determina por el rol del usuario logueado
+  const isAdmin = user?.role === 'admin';
+
+  // ========== BROWSER HISTORY (back button + mobile swipe gesture) ==========
+  const navigateTo = useCallback((view: string) => {
+    setCurrentView(view);
+    window.history.pushState({ view }, '', view === 'home' ? window.location.pathname : `${window.location.pathname}#${view}`);
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+  }, [currentView]);
+
+  useEffect(() => {
+    const handlePopState = (e: PopStateEvent) => {
+      if (e.state && e.state.view && e.state.view !== '_guard') {
+        setCurrentView(e.state.view);
+        window.scrollTo({ top: 0, behavior: 'smooth' });
+      } else {
+        // User tries to go back beyond app entry — stay on home
+        window.history.pushState({ view: 'home' }, '', window.location.pathname);
+        setCurrentView('home');
+        window.scrollTo({ top: 0, behavior: 'smooth' });
+      }
+    };
+
+    window.addEventListener('popstate', handlePopState);
+
+    // Guard: replace initial entry, then push home
+    window.history.replaceState({ view: '_guard' }, '', window.location.pathname);
+    window.history.pushState({ view: 'home' }, '', window.location.pathname);
+
+    return () => window.removeEventListener('popstate', handlePopState);
+  }, []);
+
+  // Persistir usuario en localStorage
+  useEffect(() => {
+    if (user) localStorage.setItem('borboletas_user', JSON.stringify(user));
+    else localStorage.removeItem('borboletas_user');
+  }, [user]);
+
+  // Cargar productos desde Supabase con fallback a constants
+  useEffect(() => {
+    async function loadProducts() {
+      if (!supabase) {
+        console.warn('[App] Sin conexión Supabase, usando datos locales');
+        setProducts(SAMPLE_PRODUCTS);
+        setIsLoading(false);
+        return;
+      }
+
+      try {
+        const { data, error } = await supabase
+          .from('Product')
+          .select('*')
+          .order('name');
+
+        if (error) {
+          console.error('[Supabase] Error al cargar productos:', error.message, error.details, error.hint);
+          setProducts(SAMPLE_PRODUCTS);
+        } else if (data && data.length > 0) {
+          setProducts(data as Product[]);
+          console.log(`[Supabase] ${data.length} productos cargados`);
+        } else {
+          console.warn('[Supabase] Tabla vacia, usando datos locales');
+          setProducts(SAMPLE_PRODUCTS);
+        }
+      } catch (err) {
+        console.error('[Supabase] Error de conexión:', err);
+        setProducts(SAMPLE_PRODUCTS);
+      }
+
+      setIsLoading(false);
+    }
+
+    loadProducts();
+  }, []);
+
+  // CRUD handlers para admin
+  const handleUpdateProduct = useCallback(async (id: string, updates: Partial<Product>): Promise<boolean> => {
+    if (supabase) {
+      const { error } = await supabase
+        .from('Product')
+        .update({ ...updates, updatedAt: new Date().toISOString() })
+        .eq('id', id)
+        .select();
+
+      if (error) {
+        console.error('[Supabase] Error al actualizar:', error.message, error.details, error.hint);
+        alert(`Error al actualizar: ${error.message}`);
+        return false;
+      }
+    }
+
+    setProducts((prev) => prev.map((p) => (p.id === id ? { ...p, ...updates } : p)));
+    return true;
+  }, []);
+
+  const handleToggleActive = useCallback(async (id: string) => {
+    const product = products.find((p) => p.id === id);
+    if (!product) return;
+
+    const newActive = !product.active;
+
+    if (supabase) {
+      const { error } = await supabase
+        .from('Product')
+        .update({ active: newActive, updatedAt: new Date().toISOString() })
+        .eq('id', id);
+
+      if (error) {
+        console.error('[Supabase] Error al toggle active:', error.message);
+        alert(`Error: ${error.message}`);
+        return;
+      }
+    }
+
+    setProducts((prev) => prev.map((p) => (p.id === id ? { ...p, active: newActive } : p)));
+  }, [products]);
+
+  const handleDeleteProduct = useCallback(async (id: string) => {
+    setProducts((prev) => prev.filter((p) => p.id !== id));
+
+    if (supabase) {
+      const { error } = await supabase.from('Product').delete().eq('id', id);
+      if (error) {
+        console.error('[Supabase] Error al eliminar:', error.message);
+        alert(`Error al eliminar: ${error.message}`);
+      }
+    }
+  }, []);
+
+  const handleCreateProduct = useCallback(async (product: Product): Promise<boolean> => {
+    if (!supabase) {
+      alert('No hay conexión con Supabase');
+      return false;
+    }
+
+    const { error } = await supabase.from('Product').insert({
+      id: product.id,
+      name: product.name,
+      description: product.description,
+      price: product.price,
+      discountPercent: product.discountPercent,
+      category: product.category,
+      subcategory: product.subcategory || null,
+      images: product.images,
+      customizable: product.customizable,
+      featured: product.featured,
+      active: product.active,
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+    });
+
+    if (error) {
+      console.error('[Supabase] Error al crear:', error.message, error.details, error.hint);
+      alert(`Error al crear producto: ${error.message}`);
+      return false;
+    }
+
+    setProducts((prev) => [...prev, { ...product, active: true }]);
+    return true;
+  }, []);
 
   // Cart actions
   const addToCart = useCallback((product: Product) => {
@@ -57,7 +230,7 @@ export default function App() {
 
   const handleSearch = (query: string) => {
     setSearchQuery(query);
-    setCurrentView('catalog');
+    navigateTo('catalog');
   };
 
   const handleViewDetail = (product: Product) => {
@@ -67,30 +240,27 @@ export default function App() {
 
   // Filtered products for catalog
   const getFilteredProducts = () => {
-    let products = SAMPLE_PRODUCTS.filter((p) => p.active);
+    let filtered = products.filter((p) => p.active);
 
-    // Text search
     if (searchQuery) {
       const q = searchQuery.toLowerCase();
-      products = products.filter(
+      filtered = filtered.filter(
         (p) =>
           p.name.toLowerCase().includes(q) ||
           p.description.toLowerCase().includes(q)
       );
-      return products;
+      return filtered;
     }
 
-    // Category filter
     if (activeCategory) {
-      products = products.filter((p) => p.category === activeCategory);
+      filtered = filtered.filter((p) => p.category === activeCategory);
 
-      // Subcategory filter (Navidad)
       if (activeCategory === 'navidad' && activeSubcategory) {
-        products = products.filter((p) => p.subcategory === activeSubcategory);
+        filtered = filtered.filter((p) => p.subcategory === activeSubcategory);
       }
     }
 
-    return products;
+    return filtered;
   };
 
   const handleCategoryFilter = (cat: ProductCategory | null) => {
@@ -99,65 +269,78 @@ export default function App() {
     setSearchQuery('');
   };
 
-  // Products by category
   const getProductsByCategory = (categoryKey: string) => {
-    return SAMPLE_PRODUCTS.filter((p) => p.active && p.category === categoryKey);
+    return products.filter((p) => p.active && p.category === categoryKey);
   };
 
-  // Featured products (with discount)
-  const discountedProducts = SAMPLE_PRODUCTS.filter(
+  const discountedProducts = products.filter(
     (p) => p.active && p.discountPercent > 0
   );
+
+  // Loading state
+  if (isLoading) {
+    return (
+      <div className="min-h-screen bg-brand-cream flex items-center justify-center">
+        <div className="text-center">
+          <div className="w-12 h-12 border-4 border-brand-pink border-t-transparent rounded-full animate-spin mx-auto mb-4" />
+          <p className="text-brand-gray font-body">Cargando productos...</p>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="min-h-screen bg-brand-cream">
       <Navbar
         cartItems={cartItems}
         onCartClick={() => setCartOpen(true)}
-        onAuthClick={() => {}}
+        onAuthClick={() => setAuthModalOpen(true)}
         onSearch={handleSearch}
         currentView={currentView}
-        onNavigate={setCurrentView}
+        onNavigate={navigateTo}
         user={user}
+        isAdmin={isAdmin}
       />
 
       {/* HOME */}
       {currentView === 'home' && (
         <>
-          <HeroCarousel onNavigate={setCurrentView} />
+          <HeroCarousel onNavigate={navigateTo} />
           <DiscountBanner />
 
           {/* Ofertas especiales */}
-          <section className="pt-10 pb-6">
-            <div className="max-w-[1400px] mx-auto px-4 sm:px-8 lg:px-12">
-              <div className="flex items-center gap-5 mb-8">
-                <span className="text-5xl">🔥</span>
-                <div>
-                  <h2 className="font-heading text-xl sm:text-2xl lg:text-3xl font-bold text-brand-dark">
-                    Ofertas Especiales
-                  </h2>
-                  <p className="text-sm sm:text-base text-brand-gray mt-1">
-                    Los mejores descuentos del momento
-                  </p>
+          {discountedProducts.length > 0 && (
+            <section className="pt-10 pb-6">
+              <div className="max-w-[1400px] mx-auto px-4 sm:px-8 lg:px-12">
+                <div className="flex items-center gap-5 mb-8">
+                  <span className="text-5xl">🔥</span>
+                  <div>
+                    <h2 className="font-heading text-xl sm:text-2xl lg:text-3xl font-bold text-brand-dark">
+                      Ofertas Especiales
+                    </h2>
+                    <p className="text-sm sm:text-base text-brand-gray mt-1">
+                      Los mejores descuentos del momento
+                    </p>
+                  </div>
+                </div>
+                <div className="flex gap-6 overflow-x-auto hide-scrollbar pb-2">
+                  {discountedProducts.map((product) => (
+                    <ProductCard
+                      key={product.id}
+                      product={product}
+                      onAddToCart={addToCart}
+                      onViewDetail={handleViewDetail}
+                    />
+                  ))}
                 </div>
               </div>
-              <div className="flex gap-6 overflow-x-auto hide-scrollbar pb-2">
-                {discountedProducts.map((product) => (
-                  <ProductCard
-                    key={product.id}
-                    product={product}
-                    onAddToCart={addToCart}
-                    onViewDetail={handleViewDetail}
-                  />
-                ))}
-              </div>
-            </div>
-          </section>
+            </section>
+          )}
 
-          {/* Secciones por categoría */}
+          {/* Secciones por categoria */}
           {CATEGORIES.map((cat) => {
-            const products = getProductsByCategory(cat.key);
-            if (products.length === 0) return null;
+            const catProducts = getProductsByCategory(cat.key);
+            if (catProducts.length === 0) return null;
             return (
               <div key={cat.key}>
                 <div className="max-w-[1400px] mx-auto px-4 sm:px-8 lg:px-12">
@@ -165,7 +348,7 @@ export default function App() {
                 </div>
                 <CategorySlider
                   category={cat}
-                  products={products}
+                  products={catProducts}
                   onAddToCart={addToCart}
                   onViewDetail={handleViewDetail}
                 />
@@ -175,7 +358,7 @@ export default function App() {
         </>
       )}
 
-      {/* CATÁLOGO */}
+      {/* CATALOGO */}
       {currentView === 'catalog' && (
         <div className="max-w-[1400px] mx-auto px-4 sm:px-8 lg:px-12 py-10">
           {/* Header */}
@@ -184,8 +367,8 @@ export default function App() {
               {searchQuery
                 ? `Resultados: "${searchQuery}"`
                 : activeCategory
-                  ? CATEGORIES.find(c => c.key === activeCategory)?.label || 'Catalogo'
-                  : 'Catalogo'}
+                  ? CATEGORIES.find(c => c.key === activeCategory)?.label || 'Catálogo'
+                  : 'Catálogo'}
             </h1>
             {(searchQuery || activeCategory) && (
               <button
@@ -282,10 +465,22 @@ export default function App() {
           {getFilteredProducts().length === 0 && (
             <div className="text-center py-16 text-brand-gray">
               <p className="text-lg font-medium">No se encontraron productos</p>
-              <p className="text-sm mt-1">Intenta con otra categoria o busqueda</p>
+              <p className="text-sm mt-1">Intenta con otra categoría o búsqueda</p>
             </div>
           )}
         </div>
+      )}
+
+      {/* ADMIN */}
+      {currentView === 'admin' && isAdmin && (
+        <AdminPanel
+          products={products}
+          onUpdateProduct={handleUpdateProduct}
+          onToggleActive={handleToggleActive}
+          onDeleteProduct={handleDeleteProduct}
+          onCreateProduct={handleCreateProduct}
+          onBack={() => navigateTo('home')}
+        />
       )}
 
       <Footer />
@@ -299,7 +494,7 @@ export default function App() {
         onRemoveItem={removeItem}
         onCheckout={() => {
           setCartOpen(false);
-          setCurrentView('checkout');
+          navigateTo('checkout');
         }}
       />
 
@@ -313,6 +508,15 @@ export default function App() {
 
       {/* WhatsApp flotante */}
       <WhatsAppButton />
+
+      {/* Auth modal */}
+      <AuthModal
+        isOpen={authModalOpen}
+        onClose={() => setAuthModalOpen(false)}
+        user={user}
+        onLogin={(u) => setUser(u)}
+        onLogout={() => setUser(null)}
+      />
     </div>
   );
 }

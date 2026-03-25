@@ -14,6 +14,7 @@ import Footer from './components/Footer';
 import WhatsAppButton from './components/WhatsAppButton';
 import ProductDetail from './components/ProductDetail';
 import AdminPanel from './components/AdminPanel';
+import BugReportWidget from './components/BugReportWidget';
 import AuthModal from './components/AuthModal';
 
 export default function App() {
@@ -541,6 +542,13 @@ export default function App() {
 
       {/* WhatsApp flotante */}
       <WhatsAppButton />
+
+      {/* Bug Report Widget — solo para admin */}
+      <BugReportWidget
+        user={user}
+        currentView={currentView}
+        onBugReported={() => navigateTo('admin')}
+      />
 
       {/* Auth modal */}
       <AuthModal

@@ -113,8 +113,8 @@ export default function AuthModal({ isOpen, onClose, user, onLogin, onLogout }: 
   if (!isOpen && !showPolicyModal) return null;
 
   return (
-    <>
-    <AnimatePresence>
+    <div>
+    {isOpen && (<AnimatePresence>
       <motion.div
         initial={{ opacity: 0 }}
         animate={{ opacity: 1 }}
@@ -341,7 +341,7 @@ export default function AuthModal({ isOpen, onClose, user, onLogin, onLogout }: 
           </div>
         </motion.div>
       </motion.div>
-    </AnimatePresence>
+    </AnimatePresence>)}
 
     {/* Modal de Política de Datos */}
     {showPolicyModal && (
@@ -407,6 +407,6 @@ export default function AuthModal({ isOpen, onClose, user, onLogin, onLogout }: 
         </div>
       </div>
     )}
-    </>
+    </div>
   );
 }

@@ -1,6 +1,6 @@
 import { useState, useMemo } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
-import type { Product, ProductCategory, NavidadSubcategory, BugReport, BugStatus, BugPriority } from '../types';
+import type { Product, ProductCategory, NavidadSubcategory, BugReport, BugStatus, BugPriority, ClientRow, OrderRow, OrderItemRow } from '../types';
 import { CATEGORIES, NAVIDAD_SUBCATEGORIES, formatPrice } from '../constants';
 import { supabase } from '../lib/supabase';
 import {
@@ -15,6 +15,7 @@ import {
   ArrowLeft, Plus, Pencil, Trash2, Eye, EyeOff, Save, X, Database,
   BarChart3, Package, Search, ChevronUp, ChevronDown, ChevronRight,
   CheckCircle2, Clock, Copy, Check, AlertTriangle, DollarSign, Bug,
+  Users, ShoppingBag, RefreshCw, Edit3,
 } from 'lucide-react';
 
 interface AdminPanelProps {
@@ -26,7 +27,7 @@ interface AdminPanelProps {
   onBack: () => void;
 }
 
-type AdminTab = 'dashboard' | 'products' | 'bugs' | 'sqlhistory';
+type AdminTab = 'dashboard' | 'products' | 'clients' | 'orders' | 'bugs' | 'sqlhistory';
 type SortField = 'name' | 'price' | 'category' | 'discountPercent';
 type SortDir = 'asc' | 'desc';
 
@@ -81,6 +82,21 @@ export default function AdminPanel({
   const [bugFilter, setBugFilter] = useState<string>('all');
   const [showNewBugForm, setShowNewBugForm] = useState(false);
   const [newBug, setNewBug] = useState({ title: '', description: '', priority: 'medium' as BugPriority, page: '', steps: '' });
+
+  // Clients state
+  const [clients, setClients] = useState<ClientRow[]>([]);
+  const [clientsLoading, setClientsLoading] = useState(false);
+  const [clientSearch, setClientSearch] = useState('');
+  const [editingClient, setEditingClient] = useState<number | null>(null);
+  const [clientEditForm, setClientEditForm] = useState({ name: '', phone: '', address: '' });
+  const [clientOrderCounts, setClientOrderCounts] = useState<Record<number, number>>({});
+
+  // Orders state
+  const [orders, setOrders] = useState<OrderRow[]>([]);
+  const [ordersLoading, setOrdersLoading] = useState(false);
+  const [orderSearch, setOrderSearch] = useState('');
+  const [expandedOrder, setExpandedOrder] = useState<number | null>(null);
+  const [orderItems, setOrderItems] = useState<Record<number, OrderItemRow[]>>({});
 
   // ========== STATS (must be before early return to maintain hook order) ==========
   const stats = useMemo(() => {
@@ -257,6 +273,101 @@ export default function AdminPanel({
   };
 
   const nextStatus: Record<string, BugStatus> = { open: 'in_progress', in_progress: 'resolved', resolved: 'closed' };
+  // ========== CLIENTS CRUD ==========
+  const loadClients = async () => {
+    if (!supabase) return;
+    setClientsLoading(true);
+    try {
+      const { data, error } = await supabase.from('Client').select('*').order('createdAt', { ascending: false });
+      if (error) console.error('[Clients] Load error:', error.message);
+      else if (data) setClients(data as ClientRow[]);
+      const { data: orderData } = await supabase.from('Order').select('clientId');
+      if (orderData) {
+        const counts: Record<number, number> = {};
+        orderData.forEach((o: { clientId: number }) => { counts[o.clientId] = (counts[o.clientId] || 0) + 1; });
+        setClientOrderCounts(counts);
+      }
+    } catch (e) { console.error('[Clients] Unexpected:', e); }
+    setClientsLoading(false);
+  };
+
+  const updateClient = async (id: number) => {
+    if (!supabase) return;
+    const { error } = await supabase.from('Client').update({
+      name: clientEditForm.name, phone: clientEditForm.phone, address: clientEditForm.address,
+      updatedAt: new Date().toISOString(),
+    }).eq('id', id);
+    if (error) { alert(`Error: ${error.message}`); return; }
+    setEditingClient(null);
+    loadClients();
+  };
+
+  const deleteClient = async (id: number) => {
+    if (!supabase) return;
+    if (!window.confirm('¿Eliminar este cliente? Si tiene pedidos, no se podrá eliminar.')) return;
+    const { error } = await supabase.from('Client').delete().eq('id', id);
+    if (error) {
+      if (error.message.includes('violates foreign key') || error.code === '23503') {
+        alert('No se puede eliminar: este cliente tiene pedidos asociados.');
+      } else { alert(`Error: ${error.message}`); }
+      return;
+    }
+    loadClients();
+  };
+
+  const filteredClients = clients.filter(c => {
+    if (!clientSearch) return true;
+    const q = clientSearch.toLowerCase();
+    return c.name.toLowerCase().includes(q) || c.email.toLowerCase().includes(q);
+  });
+
+  // ========== ORDERS CRUD ==========
+  const loadOrders = async () => {
+    if (!supabase) return;
+    setOrdersLoading(true);
+    try {
+      const { data, error } = await supabase.from('Order').select('*').order('createdAt', { ascending: false });
+      if (error) { console.error('[Orders] Load error:', error.message); }
+      else if (data) {
+        const clientIds = [...new Set(data.map((o: OrderRow) => o.clientId))];
+        const { data: clientData } = await supabase.from('Client').select('id, name').in('id', clientIds.length ? clientIds : [0]);
+        const clientMap: Record<number, string> = {};
+        clientData?.forEach((c: { id: number; name: string }) => { clientMap[c.id] = c.name; });
+        const { data: itemData } = await supabase.from('OrderItem').select('orderId');
+        const itemCounts: Record<number, number> = {};
+        itemData?.forEach((i: { orderId: number }) => { itemCounts[i.orderId] = (itemCounts[i.orderId] || 0) + 1; });
+        setOrders(data.map((o: OrderRow) => ({
+          ...o,
+          clientName: clientMap[o.clientId] || 'Desconocido',
+          itemCount: itemCounts[o.id] || 0,
+        })));
+      }
+    } catch (e) { console.error('[Orders] Unexpected:', e); }
+    setOrdersLoading(false);
+  };
+
+  const loadOrderItemsForOrder = async (orderId: number) => {
+    if (!supabase || orderItems[orderId]) return;
+    const { data } = await supabase.from('OrderItem').select('*').eq('orderId', orderId).order('id');
+    if (data) setOrderItems(prev => ({ ...prev, [orderId]: data as OrderItemRow[] }));
+  };
+
+  const deleteOrder = async (id: number) => {
+    if (!supabase) return;
+    if (!window.confirm('¿Eliminar este pedido y todos sus items?')) return;
+    await supabase.from('OrderItem').delete().eq('orderId', id);
+    const { error } = await supabase.from('Order').delete().eq('id', id);
+    if (error) { alert(`Error: ${error.message}`); return; }
+    setOrderItems(prev => { const next = { ...prev }; delete next[id]; return next; });
+    loadOrders();
+  };
+
+  const filteredOrders = orders.filter(o => {
+    if (!orderSearch) return true;
+    const q = orderSearch.toLowerCase();
+    return (o.clientName || '').toLowerCase().includes(q) || o.date.includes(q) || String(o.id).includes(q);
+  });
+
   const statusLabels: Record<string, string> = { open: 'Abierto', in_progress: 'En progreso', resolved: 'Resuelto', closed: 'Cerrado' };
   const priorityLabels: Record<string, string> = { low: 'Baja', medium: 'Media', high: 'Alta', critical: 'Crítica' };
   const priorityColors: Record<string, string> = { low: 'bg-blue-100 text-blue-700', medium: 'bg-amber-100 text-amber-700', high: 'bg-orange-100 text-orange-700', critical: 'bg-red-100 text-red-700' };
@@ -318,6 +429,8 @@ export default function AdminPanel({
   const tabs: { key: AdminTab; label: string; icon: React.ReactNode; badge?: string }[] = [
     { key: 'dashboard', label: 'Dashboard', icon: <BarChart3 size={16} /> },
     { key: 'products', label: 'Productos', icon: <Package size={16} />, badge: `${products.length}` },
+    { key: 'clients', label: 'Clientes', icon: <Users size={16} />, badge: clients.length > 0 ? `${clients.length}` : undefined },
+    { key: 'orders', label: 'Pedidos', icon: <ShoppingBag size={16} />, badge: orders.length > 0 ? `${orders.length}` : undefined },
     { key: 'bugs', label: 'Bug Reports', icon: <Bug size={16} />, badge: bugs.filter(b => b.status === 'open').length > 0 ? `${bugs.filter(b => b.status === 'open').length}` : undefined },
     { key: 'sqlhistory', label: 'SQL History', icon: <Database size={16} /> },
   ];
@@ -358,7 +471,7 @@ export default function AdminPanel({
         {tabs.map(tab => (
           <button
             key={tab.key}
-            onClick={() => { setAdminTab(tab.key); if (tab.key === 'bugs') loadBugs(); }}
+            onClick={() => { setAdminTab(tab.key); if (tab.key === 'bugs') loadBugs(); if (tab.key === 'clients') loadClients(); if (tab.key === 'orders') loadOrders(); }}
             className={`flex items-center gap-2 px-5 py-2.5 rounded-xl text-sm font-semibold whitespace-nowrap transition-all cursor-pointer ${
               adminTab === tab.key
                 ? 'bg-amber-500 text-white shadow-md shadow-amber-200'
@@ -569,6 +682,257 @@ export default function AdminPanel({
               </div>
             )}
           </div>
+        </div>
+      )}
+
+      {/* ======== CLIENTS TAB ======== */}
+      {adminTab === 'clients' && (
+        <div className="space-y-4">
+          <div className="bg-white rounded-2xl border border-slate-200 p-5 flex items-center justify-between flex-wrap gap-3">
+            <div className="flex items-center gap-3">
+              <div className="w-10 h-10 rounded-xl bg-blue-100 flex items-center justify-center">
+                <Users className="w-5 h-5 text-blue-600" />
+              </div>
+              <div>
+                <h3 className="font-bold text-slate-800">Gestión de Clientes</h3>
+                <p className="text-xs text-slate-400">{clients.length} clientes registrados</p>
+              </div>
+            </div>
+            <div className="flex items-center gap-2">
+              <div className="relative">
+                <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
+                <input type="text" placeholder="Buscar por nombre o email..." value={clientSearch}
+                  onChange={e => setClientSearch(e.target.value)}
+                  className="pl-9 pr-4 py-2 text-sm border border-slate-200 rounded-xl focus:border-blue-500 outline-none w-64" />
+              </div>
+              <button onClick={loadClients} className="p-2 rounded-xl border border-slate-200 hover:bg-slate-50 transition-colors cursor-pointer" title="Recargar">
+                <RefreshCw className="w-4 h-4 text-slate-500" />
+              </button>
+            </div>
+          </div>
+
+          {clientsLoading ? (
+            <div className="bg-white rounded-2xl border border-slate-200 p-12 text-center">
+              <RefreshCw className="w-8 h-8 text-blue-400 animate-spin mx-auto mb-3" />
+              <p className="text-sm text-slate-500">Cargando clientes...</p>
+            </div>
+          ) : filteredClients.length === 0 ? (
+            <div className="bg-white rounded-2xl border border-slate-200 p-12 text-center">
+              <Users className="w-8 h-8 text-slate-300 mx-auto mb-3" />
+              <p className="text-sm text-slate-500">{clientSearch ? 'Sin resultados' : 'No hay clientes registrados'}</p>
+            </div>
+          ) : (
+            <div className="bg-white rounded-2xl border border-slate-200 overflow-hidden">
+              <div className="overflow-x-auto" style={{ overscrollBehaviorX: 'contain' }}>
+                <table className="w-full text-sm">
+                  <thead>
+                    <tr className="bg-slate-50 border-b border-slate-200">
+                      <th className="text-left px-4 py-3 font-semibold text-slate-600">Nombre</th>
+                      <th className="text-left px-4 py-3 font-semibold text-slate-600">Email</th>
+                      <th className="text-left px-4 py-3 font-semibold text-slate-600">Teléfono</th>
+                      <th className="text-left px-4 py-3 font-semibold text-slate-600">Dirección</th>
+                      <th className="text-center px-4 py-3 font-semibold text-slate-600">Rol</th>
+                      <th className="text-center px-4 py-3 font-semibold text-slate-600">Pedidos</th>
+                      <th className="text-center px-4 py-3 font-semibold text-slate-600">Acciones</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {filteredClients.map(client => (
+                      <tr key={client.id} className="border-b border-slate-100 hover:bg-slate-50/50 transition-colors">
+                        <td className="px-4 py-3">
+                          {editingClient === client.id ? (
+                            <input value={clientEditForm.name} onChange={e => setClientEditForm({ ...clientEditForm, name: e.target.value })}
+                              className="w-full px-2 py-1 border border-amber-300 rounded-lg bg-amber-50 text-sm focus:outline-none" />
+                          ) : (
+                            <span className="font-medium text-slate-800">{client.name}</span>
+                          )}
+                        </td>
+                        <td className="px-4 py-3 text-slate-500">{client.email}</td>
+                        <td className="px-4 py-3">
+                          {editingClient === client.id ? (
+                            <input value={clientEditForm.phone} onChange={e => setClientEditForm({ ...clientEditForm, phone: e.target.value })}
+                              className="w-full px-2 py-1 border border-amber-300 rounded-lg bg-amber-50 text-sm focus:outline-none" />
+                          ) : (
+                            <span className="text-slate-600">{client.phone || '—'}</span>
+                          )}
+                        </td>
+                        <td className="px-4 py-3">
+                          {editingClient === client.id ? (
+                            <input value={clientEditForm.address} onChange={e => setClientEditForm({ ...clientEditForm, address: e.target.value })}
+                              className="w-full px-2 py-1 border border-amber-300 rounded-lg bg-amber-50 text-sm focus:outline-none" />
+                          ) : (
+                            <span className="text-slate-500 text-xs">{client.address || '—'}</span>
+                          )}
+                        </td>
+                        <td className="px-4 py-3 text-center">
+                          <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold ${client.role === 'admin' ? 'bg-amber-100 text-amber-700' : 'bg-slate-100 text-slate-500'}`}>
+                            {client.role}
+                          </span>
+                        </td>
+                        <td className="px-4 py-3 text-center">
+                          <span className="bg-blue-50 text-blue-600 px-2 py-0.5 rounded-full text-xs font-bold">
+                            {clientOrderCounts[client.id] || 0}
+                          </span>
+                        </td>
+                        <td className="px-4 py-3 text-center">
+                          {editingClient === client.id ? (
+                            <div className="flex items-center justify-center gap-1">
+                              <button onClick={() => updateClient(client.id)} className="p-1.5 rounded-lg bg-emerald-100 text-emerald-600 hover:bg-emerald-200 transition-colors cursor-pointer" title="Guardar">
+                                <Save className="w-3.5 h-3.5" />
+                              </button>
+                              <button onClick={() => setEditingClient(null)} className="p-1.5 rounded-lg bg-slate-100 text-slate-500 hover:bg-slate-200 transition-colors cursor-pointer" title="Cancelar">
+                                <X className="w-3.5 h-3.5" />
+                              </button>
+                            </div>
+                          ) : (
+                            <div className="flex items-center justify-center gap-1">
+                              <button onClick={() => { setEditingClient(client.id); setClientEditForm({ name: client.name, phone: client.phone || '', address: client.address || '' }); }}
+                                className="p-1.5 rounded-lg hover:bg-blue-50 text-slate-400 hover:text-blue-600 transition-colors cursor-pointer" title="Editar">
+                                <Edit3 className="w-3.5 h-3.5" />
+                              </button>
+                              <button onClick={() => deleteClient(client.id)}
+                                className="p-1.5 rounded-lg hover:bg-red-50 text-slate-400 hover:text-red-500 transition-colors cursor-pointer" title="Eliminar">
+                                <Trash2 className="w-3.5 h-3.5" />
+                              </button>
+                            </div>
+                          )}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+              <div className="px-4 py-3 bg-slate-50 border-t border-slate-200 text-xs text-slate-400">
+                Mostrando {filteredClients.length} de {clients.length} clientes
+              </div>
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* ======== ORDERS TAB ======== */}
+      {adminTab === 'orders' && (
+        <div className="space-y-4">
+          <div className="bg-white rounded-2xl border border-slate-200 p-5 flex items-center justify-between flex-wrap gap-3">
+            <div className="flex items-center gap-3">
+              <div className="w-10 h-10 rounded-xl bg-purple-100 flex items-center justify-center">
+                <ShoppingBag className="w-5 h-5 text-purple-600" />
+              </div>
+              <div>
+                <h3 className="font-bold text-slate-800">Gestión de Pedidos</h3>
+                <p className="text-xs text-slate-400">{orders.length} pedidos &middot; {formatPrice(orders.reduce((s, o) => s + o.total, 0))} total</p>
+              </div>
+            </div>
+            <div className="flex items-center gap-2">
+              <div className="relative">
+                <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
+                <input type="text" placeholder="Buscar por cliente o fecha..." value={orderSearch}
+                  onChange={e => setOrderSearch(e.target.value)}
+                  className="pl-9 pr-4 py-2 text-sm border border-slate-200 rounded-xl focus:border-purple-500 outline-none w-64" />
+              </div>
+              <button onClick={loadOrders} className="p-2 rounded-xl border border-slate-200 hover:bg-slate-50 transition-colors cursor-pointer" title="Recargar">
+                <RefreshCw className="w-4 h-4 text-slate-500" />
+              </button>
+            </div>
+          </div>
+
+          {ordersLoading ? (
+            <div className="bg-white rounded-2xl border border-slate-200 p-12 text-center">
+              <RefreshCw className="w-8 h-8 text-purple-400 animate-spin mx-auto mb-3" />
+              <p className="text-sm text-slate-500">Cargando pedidos...</p>
+            </div>
+          ) : filteredOrders.length === 0 ? (
+            <div className="bg-white rounded-2xl border border-slate-200 p-12 text-center">
+              <ShoppingBag className="w-8 h-8 text-slate-300 mx-auto mb-3" />
+              <p className="text-sm text-slate-500">{orderSearch ? 'Sin resultados' : 'No hay pedidos'}</p>
+            </div>
+          ) : (
+            <div className="space-y-3">
+              {filteredOrders.map(order => (
+                <div key={order.id} className="bg-white rounded-2xl border border-slate-200 overflow-hidden">
+                  <div
+                    className="p-4 flex items-center justify-between cursor-pointer hover:bg-slate-50/50 transition-colors"
+                    onClick={() => {
+                      const next = expandedOrder === order.id ? null : order.id;
+                      setExpandedOrder(next);
+                      if (next) loadOrderItemsForOrder(order.id);
+                    }}
+                  >
+                    <div className="flex items-center gap-4">
+                      <span className="bg-purple-100 text-purple-700 px-3 py-1 rounded-lg text-xs font-bold">#{order.id}</span>
+                      <div>
+                        <p className="font-semibold text-slate-800 text-sm">{order.clientName}</p>
+                        <p className="text-xs text-slate-400">{order.date} &middot; {order.time} &middot; {order.address}</p>
+                      </div>
+                    </div>
+                    <div className="flex items-center gap-4">
+                      <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold ${
+                        order.status === 'pendiente' ? 'bg-amber-100 text-amber-700' :
+                        order.status === 'en_proceso' ? 'bg-blue-100 text-blue-700' :
+                        order.status === 'enviado' ? 'bg-purple-100 text-purple-700' :
+                        'bg-emerald-100 text-emerald-700'
+                      }`}>{order.status}</span>
+                      <div className="text-right">
+                        <p className="font-bold text-slate-800">{formatPrice(order.total)}</p>
+                        <p className="text-[10px] text-slate-400">{order.itemCount || 0} items</p>
+                      </div>
+                      <button onClick={(e) => { e.stopPropagation(); deleteOrder(order.id); }}
+                        className="p-1.5 rounded-lg hover:bg-red-50 text-slate-400 hover:text-red-500 transition-colors cursor-pointer" title="Eliminar pedido">
+                        <Trash2 className="w-4 h-4" />
+                      </button>
+                      {expandedOrder === order.id ? <ChevronUp className="w-4 h-4 text-slate-400" /> : <ChevronDown className="w-4 h-4 text-slate-400" />}
+                    </div>
+                  </div>
+
+                  <AnimatePresence>
+                    {expandedOrder === order.id && (
+                      <motion.div
+                        initial={{ height: 0, opacity: 0 }}
+                        animate={{ height: 'auto', opacity: 1 }}
+                        exit={{ height: 0, opacity: 0 }}
+                        className="border-t border-slate-100 overflow-hidden"
+                      >
+                        <div className="p-4 bg-slate-50/50">
+                          {!orderItems[order.id] ? (
+                            <p className="text-xs text-slate-400 text-center py-2">Cargando items...</p>
+                          ) : orderItems[order.id].length === 0 ? (
+                            <p className="text-xs text-slate-400 text-center py-2">Sin items</p>
+                          ) : (
+                            <table className="w-full text-xs">
+                              <thead>
+                                <tr className="text-slate-500">
+                                  <th className="text-left py-1 font-semibold">Producto</th>
+                                  <th className="text-center py-1 font-semibold">Cant.</th>
+                                  <th className="text-right py-1 font-semibold">Precio</th>
+                                  <th className="text-right py-1 font-semibold">Subtotal</th>
+                                </tr>
+                              </thead>
+                              <tbody>
+                                {orderItems[order.id].map(item => (
+                                  <tr key={item.id} className="border-t border-slate-200/50">
+                                    <td className="py-2 text-slate-700 font-medium">{item.name}</td>
+                                    <td className="py-2 text-center text-slate-600">{item.quantity}</td>
+                                    <td className="py-2 text-right text-slate-500">{formatPrice(item.price)}</td>
+                                    <td className="py-2 text-right font-semibold text-slate-700">{formatPrice(item.price * item.quantity)}</td>
+                                  </tr>
+                                ))}
+                              </tbody>
+                              <tfoot>
+                                <tr className="border-t border-slate-300">
+                                  <td colSpan={3} className="py-2 text-right font-bold text-slate-600">Total:</td>
+                                  <td className="py-2 text-right font-bold text-purple-700">{formatPrice(order.total)}</td>
+                                </tr>
+                              </tfoot>
+                            </table>
+                          )}
+                        </div>
+                      </motion.div>
+                    )}
+                  </AnimatePresence>
+                </div>
+              ))}
+            </div>
+          )}
         </div>
       )}
 

@@ -1,9 +1,9 @@
 import { useState, useCallback, useEffect } from 'react';
 import type { Product, CartItem, User } from './types';
 import type { ProductCategory, NavidadSubcategory } from './types';
-import { SAMPLE_PRODUCTS, CATEGORIES, NAVIDAD_SUBCATEGORIES } from './constants';
+import { SAMPLE_PRODUCTS, CATEGORIES, NAVIDAD_SUBCATEGORIES, COMPANY, formatPrice, getDiscountedPrice } from './constants';
 import { supabase } from './lib/supabase';
-import { Users } from 'lucide-react';
+import { Users, ArrowLeft, CheckCircle2, Clock, MapPin, Phone as PhoneIcon, Calendar, CreditCard, MessageCircle } from 'lucide-react';
 import Navbar from './components/Navbar';
 import HeroCarousel from './components/HeroCarousel';
 import DiscountBanner from './components/DiscountBanner';
@@ -33,6 +33,13 @@ export default function App() {
   const [detailOpen, setDetailOpen] = useState(false);
   const [activeCategory, setActiveCategory] = useState<ProductCategory | null>(null);
   const [activeSubcategory, setActiveSubcategory] = useState<NavidadSubcategory | null>(null);
+
+  // Checkout state
+  const [checkoutForm, setCheckoutForm] = useState({ name: '', phone: '', address: '', date: '', time: '' });
+  const [checkoutStep, setCheckoutStep] = useState<'form' | 'success' | 'payment' | 'qr'>('form');
+  const [checkoutSaving, setCheckoutSaving] = useState(false);
+  const [lastOrderId, setLastOrderId] = useState<number | null>(null);
+  const [selectedPayment, setSelectedPayment] = useState<string | null>(null);
 
   // Supabase state
   const [products, setProducts] = useState<Product[]>(SAMPLE_PRODUCTS);
@@ -500,6 +507,260 @@ export default function App() {
             <div className="text-center py-16 text-brand-gray">
               <p className="text-lg font-medium">No se encontraron productos</p>
               <p className="text-sm mt-1">Intenta con otra categoría o búsqueda</p>
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* CHECKOUT */}
+      {currentView === 'checkout' && (
+        <div className="max-w-2xl mx-auto px-4 sm:px-8 py-10">
+          {/* Back button */}
+          <button onClick={() => { navigateTo('home'); setCheckoutStep('form'); }}
+            className="flex items-center gap-2 text-sm text-brand-gray hover:text-brand-pink mb-6 cursor-pointer">
+            <ArrowLeft size={16} /> Volver al inicio
+          </button>
+
+          {/* STEP 1: Checkout Form */}
+          {checkoutStep === 'form' && (
+            <div className="bg-white rounded-2xl shadow-lg border border-gray-100 overflow-hidden">
+              <div className="bg-gradient-to-r from-brand-pink to-brand-purple px-6 py-5">
+                <h2 className="text-white font-heading font-bold text-xl">Finalizar Pedido</h2>
+                <p className="text-white/70 text-sm mt-1">{cartItems.length} producto{cartItems.length !== 1 ? 's' : ''} en tu carrito</p>
+              </div>
+
+              {/* Order summary */}
+              <div className="p-6 border-b border-gray-100">
+                <h3 className="font-semibold text-brand-dark text-sm mb-3">Resumen del pedido</h3>
+                {cartItems.map(item => {
+                  const price = item.product.discountPercent > 0 ? getDiscountedPrice(item.product.price, item.product.discountPercent) : item.product.price;
+                  return (
+                    <div key={item.product.id} className="flex justify-between text-sm py-1.5">
+                      <span className="text-brand-gray">{item.product.name} x{item.quantity}</span>
+                      <span className="font-medium text-brand-dark">{price > 0 ? formatPrice(price * item.quantity) : 'Consultar'}</span>
+                    </div>
+                  );
+                })}
+                <div className="border-t border-gray-100 mt-3 pt-3 flex justify-between font-bold text-brand-dark">
+                  <span>Total</span>
+                  <span className="text-brand-pink">{formatPrice(cartItems.reduce((s, i) => {
+                    const p = i.product.discountPercent > 0 ? getDiscountedPrice(i.product.price, i.product.discountPercent) : i.product.price;
+                    return s + p * i.quantity;
+                  }, 0))}</span>
+                </div>
+              </div>
+
+              {/* Form */}
+              <form className="p-6 space-y-4" onSubmit={async (e) => {
+                e.preventDefault();
+                if (!supabase || !user) { alert('Debes iniciar sesión'); return; }
+                if (!checkoutForm.name || !checkoutForm.phone || !checkoutForm.address || !checkoutForm.date || !checkoutForm.time) {
+                  alert('Por favor completa todos los campos'); return;
+                }
+                setCheckoutSaving(true);
+                try {
+                  const total = cartItems.reduce((s, i) => {
+                    const p = i.product.discountPercent > 0 ? getDiscountedPrice(i.product.price, i.product.discountPercent) : i.product.price;
+                    return s + p * i.quantity;
+                  }, 0);
+                  // Find client
+                  const { data: clientData } = await supabase.from('Client').select('id').eq('email', user.email).single();
+                  if (!clientData) { alert('Error: cliente no encontrado'); setCheckoutSaving(false); return; }
+                  // Create order
+                  const { data: orderData, error: orderError } = await supabase.from('Order').insert({
+                    clientId: clientData.id,
+                    address: checkoutForm.address,
+                    date: checkoutForm.date,
+                    time: checkoutForm.time,
+                    total,
+                    status: 'pendiente',
+                  }).select('id').single();
+                  if (orderError || !orderData) { alert(`Error: ${orderError?.message || 'No se pudo crear el pedido'}`); setCheckoutSaving(false); return; }
+                  // Create order items
+                  const items = cartItems.map(i => ({
+                    orderId: orderData.id,
+                    productId: i.product.id,
+                    name: i.product.name,
+                    quantity: i.quantity,
+                    price: i.product.discountPercent > 0 ? getDiscountedPrice(i.product.price, i.product.discountPercent) : i.product.price,
+                  }));
+                  await supabase.from('OrderItem').insert(items);
+                  setLastOrderId(orderData.id);
+                  setCheckoutStep('success');
+                } catch (err) { alert('Error inesperado'); console.error(err); }
+                setCheckoutSaving(false);
+              }}>
+                <div>
+                  <label className="text-xs font-semibold text-brand-gray uppercase tracking-wider block mb-1">Nombre del destinatario *</label>
+                  <div className="relative">
+                    <Users className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-brand-gray/50" />
+                    <input type="text" value={checkoutForm.name} onChange={e => setCheckoutForm({ ...checkoutForm, name: e.target.value })}
+                      placeholder="Nombre completo" required
+                      className="w-full pl-10 pr-4 py-3 rounded-xl border border-gray-200 text-sm focus:border-brand-pink focus:ring-2 focus:ring-brand-pink/20 outline-none" />
+                  </div>
+                </div>
+                <div>
+                  <label className="text-xs font-semibold text-brand-gray uppercase tracking-wider block mb-1">Celular *</label>
+                  <div className="relative">
+                    <PhoneIcon className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-brand-gray/50" />
+                    <input type="tel" value={checkoutForm.phone} onChange={e => setCheckoutForm({ ...checkoutForm, phone: e.target.value })}
+                      placeholder="3XX XXX XXXX" required
+                      className="w-full pl-10 pr-4 py-3 rounded-xl border border-gray-200 text-sm focus:border-brand-pink focus:ring-2 focus:ring-brand-pink/20 outline-none" />
+                  </div>
+                </div>
+                <div>
+                  <label className="text-xs font-semibold text-brand-gray uppercase tracking-wider block mb-1">Dirección de entrega *</label>
+                  <div className="relative">
+                    <MapPin className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-brand-gray/50" />
+                    <input type="text" value={checkoutForm.address} onChange={e => setCheckoutForm({ ...checkoutForm, address: e.target.value })}
+                      placeholder="Calle, carrera, barrio..." required
+                      className="w-full pl-10 pr-4 py-3 rounded-xl border border-gray-200 text-sm focus:border-brand-pink focus:ring-2 focus:ring-brand-pink/20 outline-none" />
+                  </div>
+                </div>
+                <div className="grid grid-cols-2 gap-4">
+                  <div>
+                    <label className="text-xs font-semibold text-brand-gray uppercase tracking-wider block mb-1">Fecha *</label>
+                    <div className="relative">
+                      <Calendar className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-brand-gray/50" />
+                      <input type="date" value={checkoutForm.date} onChange={e => setCheckoutForm({ ...checkoutForm, date: e.target.value })}
+                        min={new Date().toISOString().split('T')[0]} required
+                        className="w-full pl-10 pr-4 py-3 rounded-xl border border-gray-200 text-sm focus:border-brand-pink focus:ring-2 focus:ring-brand-pink/20 outline-none cursor-pointer" />
+                    </div>
+                  </div>
+                  <div>
+                    <label className="text-xs font-semibold text-brand-gray uppercase tracking-wider block mb-1">Hora *</label>
+                    <div className="relative">
+                      <Clock className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-brand-gray/50" />
+                      <select value={checkoutForm.time} onChange={e => setCheckoutForm({ ...checkoutForm, time: e.target.value })} required
+                        className="w-full pl-10 pr-4 py-3 rounded-xl border border-gray-200 text-sm focus:border-brand-pink focus:ring-2 focus:ring-brand-pink/20 outline-none cursor-pointer appearance-none">
+                        <option value="">Seleccionar</option>
+                        {Array.from({ length: 11 }, (_, i) => i + 8).map(h => (
+                          <option key={h} value={`${h}:00`}>{h}:00 {h < 12 ? 'AM' : 'PM'}</option>
+                        ))}
+                      </select>
+                    </div>
+                  </div>
+                </div>
+
+                {!user && (
+                  <div className="bg-amber-50 border border-amber-200 rounded-xl p-4 text-sm text-amber-700">
+                    Debes <button type="button" onClick={() => setAuthModalOpen(true)} className="underline font-bold cursor-pointer">iniciar sesión</button> para completar tu pedido.
+                  </div>
+                )}
+
+                <button type="submit" disabled={checkoutSaving || !user || cartItems.length === 0}
+                  className="w-full bg-gradient-to-r from-brand-pink to-brand-purple text-white py-4 rounded-xl font-bold text-base hover:shadow-lg transition-all disabled:opacity-50 cursor-pointer">
+                  {checkoutSaving ? 'Procesando...' : 'Confirmar Pedido'}
+                </button>
+              </form>
+            </div>
+          )}
+
+          {/* STEP 2: Success */}
+          {checkoutStep === 'success' && (
+            <div className="bg-white rounded-2xl shadow-lg border border-gray-100 p-8 text-center">
+              <div className="w-20 h-20 bg-emerald-100 rounded-full flex items-center justify-center mx-auto mb-5">
+                <CheckCircle2 className="w-10 h-10 text-emerald-500" />
+              </div>
+              <h2 className="font-heading font-bold text-2xl text-brand-dark mb-2">¡Pedido Confirmado!</h2>
+              <p className="text-brand-gray mb-1">Pedido #{lastOrderId}</p>
+              <p className="text-sm text-brand-gray mb-8">Tu pedido ha sido registrado exitosamente. Ahora procede al pago.</p>
+              <button onClick={() => setCheckoutStep('payment')}
+                className="w-full bg-gradient-to-r from-brand-pink to-brand-purple text-white py-4 rounded-xl font-bold text-base hover:shadow-lg transition-all cursor-pointer flex items-center justify-center gap-2">
+                <CreditCard className="w-5 h-5" /> Ir a Pasarela de Pagos
+              </button>
+            </div>
+          )}
+
+          {/* STEP 3: Payment method selection */}
+          {checkoutStep === 'payment' && (
+            <div className="bg-white rounded-2xl shadow-lg border border-gray-100 overflow-hidden">
+              <div className="bg-gradient-to-r from-brand-pink to-brand-purple px-6 py-5">
+                <h2 className="text-white font-heading font-bold text-xl">Selecciona método de pago</h2>
+                <p className="text-white/70 text-sm mt-1">Pedido #{lastOrderId}</p>
+              </div>
+              <div className="p-6 space-y-3">
+                {[
+                  { id: 'nequi', name: 'Nequi', color: 'bg-purple-500', available: true, desc: 'Pago con QR' },
+                  { id: 'daviplata', name: 'Daviplata', color: 'bg-red-500', available: false, desc: 'Próximamente' },
+                  { id: 'bold', name: 'Bold / Datáfono', color: 'bg-blue-600', available: true, desc: 'Solicitar link por WhatsApp' },
+                ].map(method => (
+                  <button key={method.id} disabled={!method.available}
+                    onClick={() => {
+                      if (method.id === 'bold') {
+                        const total = cartItems.reduce((s, i) => {
+                          const p = i.product.discountPercent > 0 ? getDiscountedPrice(i.product.price, i.product.discountPercent) : i.product.price;
+                          return s + p * i.quantity;
+                        }, 0);
+                        const msg = `Hola Borboletas! 🦋 Quiero pagar mi pedido #${lastOrderId} por ${formatPrice(total)} con datáfono/Bold. ¿Me pueden enviar el link de pago?`;
+                        window.open(`https://wa.me/${COMPANY.whatsapp.replace(/[^0-9]/g, '')}?text=${encodeURIComponent(msg)}`, '_blank');
+                        setCartItems([]);
+                        return;
+                      }
+                      setSelectedPayment(method.id);
+                      setCheckoutStep('qr');
+                    }}
+                    className={`w-full flex items-center gap-4 p-4 rounded-xl border-2 transition-all cursor-pointer ${
+                      method.available ? 'border-gray-200 hover:border-brand-pink hover:shadow-md' : 'border-gray-100 opacity-50 cursor-not-allowed'
+                    }`}>
+                    <div className={`w-12 h-12 ${method.color} rounded-xl flex items-center justify-center text-white font-bold text-lg`}>
+                      {method.name[0]}
+                    </div>
+                    <div className="text-left flex-1">
+                      <p className="font-bold text-brand-dark">{method.name}</p>
+                      <p className="text-xs text-brand-gray">{method.desc}</p>
+                    </div>
+                    {!method.available && <span className="text-[10px] bg-gray-100 text-gray-500 px-2 py-1 rounded-full font-bold">PRÓXIMAMENTE</span>}
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {/* STEP 4: QR payment */}
+          {checkoutStep === 'qr' && (
+            <div className="bg-white rounded-2xl shadow-lg border border-gray-100 overflow-hidden text-center">
+              <div className="bg-gradient-to-r from-purple-500 to-purple-700 px-6 py-5">
+                <h2 className="text-white font-heading font-bold text-xl">Pago con {selectedPayment === 'nequi' ? 'Nequi' : selectedPayment}</h2>
+              </div>
+              <div className="p-8">
+                <p className="text-3xl font-bold text-brand-dark mb-6">{formatPrice(cartItems.reduce((s, i) => {
+                  const p = i.product.discountPercent > 0 ? getDiscountedPrice(i.product.price, i.product.discountPercent) : i.product.price;
+                  return s + p * i.quantity;
+                }, 0))}</p>
+
+                {/* QR placeholder — user will replace with real image */}
+                <div className="w-64 h-64 mx-auto bg-gray-50 border-2 border-dashed border-gray-300 rounded-2xl flex items-center justify-center mb-6">
+                  <p className="text-sm text-gray-400 px-4">QR de pago<br/>(pendiente por agregar)</p>
+                </div>
+
+                <div className="bg-purple-50 rounded-xl p-4 mb-6 text-left">
+                  <p className="text-sm font-bold text-purple-800 mb-2">Instrucciones:</p>
+                  <ol className="text-xs text-purple-700 space-y-1 list-decimal list-inside">
+                    <li>Abre la app de {selectedPayment === 'nequi' ? 'Nequi' : selectedPayment}</li>
+                    <li>Escanea el código QR</li>
+                    <li>Ingresa el monto exacto</li>
+                    <li>Envía el comprobante por WhatsApp</li>
+                  </ol>
+                </div>
+
+                <button onClick={() => {
+                  const total = cartItems.reduce((s, i) => {
+                    const p = i.product.discountPercent > 0 ? getDiscountedPrice(i.product.price, i.product.discountPercent) : i.product.price;
+                    return s + p * i.quantity;
+                  }, 0);
+                  const itemList = cartItems.map(i => `• ${i.product.name} x${i.quantity}`).join('\n');
+                  const msg = `Hola Borboletas! 🦋\n\nComprobante de pago:\n📋 Pedido #${lastOrderId}\n${itemList}\n💰 Total: ${formatPrice(total)}\n💳 Método: ${selectedPayment}\n\n📍 ${checkoutForm.address}\n📅 ${checkoutForm.date} ${checkoutForm.time}\n📞 ${checkoutForm.phone}`;
+                  window.open(`https://wa.me/${COMPANY.whatsapp.replace(/[^0-9]/g, '')}?text=${encodeURIComponent(msg)}`, '_blank');
+                  setCartItems([]);
+                  setCheckoutStep('form');
+                  setCheckoutForm({ name: '', phone: '', address: '', date: '', time: '' });
+                  navigateTo('home');
+                }}
+                  className="w-full bg-emerald-500 text-white py-4 rounded-xl font-bold text-base hover:bg-emerald-600 transition-all cursor-pointer flex items-center justify-center gap-2">
+                  <MessageCircle className="w-5 h-5" /> Enviar comprobante por WhatsApp
+                </button>
+              </div>
             </div>
           )}
         </div>

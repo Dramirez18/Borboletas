@@ -89,6 +89,45 @@ export interface BugReport {
   resolvedAt?: string;
 }
 
+// ─── Admin Row types (para tablas Supabase) ───
+
+export interface ClientRow {
+  id: number;
+  name: string;
+  email: string;
+  phone: string;
+  address: string;
+  city: string;
+  role: string;
+  acceptedDataPolicy?: boolean;
+  policyAcceptedAt?: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface OrderRow {
+  id: number;
+  clientId: number;
+  address: string;
+  date: string;
+  time: string;
+  total: number;
+  status: string;
+  createdAt: string;
+  // Enriched fields
+  clientName?: string;
+  itemCount?: number;
+}
+
+export interface OrderItemRow {
+  id: number;
+  orderId: number;
+  productId: string | null;
+  name: string;
+  quantity: number;
+  price: number;
+}
+
 export interface CategoryInfo {
   key: ProductCategory;
   label: string;

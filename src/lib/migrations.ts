@@ -151,6 +151,39 @@ END;
 $$ LANGUAGE plpgsql;`,
     createdAt: '2026-03-24',
   },
+  {
+    id: '007_create_order_tables',
+    title: 'Crear tablas Order y OrderItem',
+    description: 'Tablas para gestionar pedidos de clientes con sus items',
+    sql: `-- Tabla de pedidos
+CREATE TABLE IF NOT EXISTS "Order" (
+  id SERIAL PRIMARY KEY,
+  "clientId" INTEGER NOT NULL REFERENCES "Client"(id) ON DELETE RESTRICT,
+  address TEXT NOT NULL DEFAULT '',
+  date TEXT NOT NULL,
+  time TEXT NOT NULL,
+  total INTEGER NOT NULL DEFAULT 0,
+  status TEXT NOT NULL DEFAULT 'pendiente' CHECK (status IN ('pendiente','en_proceso','enviado','entregado')),
+  "createdAt" TIMESTAMPTZ DEFAULT NOW()
+);
+CREATE INDEX IF NOT EXISTS "Order_clientId_idx" ON "Order"("clientId");
+CREATE INDEX IF NOT EXISTS "Order_status_idx" ON "Order"(status);
+ALTER TABLE "Order" DISABLE ROW LEVEL SECURITY;
+
+-- Tabla de items de pedido
+CREATE TABLE IF NOT EXISTS "OrderItem" (
+  id SERIAL PRIMARY KEY,
+  "orderId" INTEGER NOT NULL REFERENCES "Order"(id) ON DELETE CASCADE,
+  "productId" TEXT REFERENCES "Product"(id) ON DELETE SET NULL,
+  name TEXT NOT NULL,
+  quantity INTEGER NOT NULL DEFAULT 1,
+  price INTEGER NOT NULL DEFAULT 0,
+  "createdAt" TIMESTAMPTZ DEFAULT NOW()
+);
+CREATE INDEX IF NOT EXISTS "OrderItem_orderId_idx" ON "OrderItem"("orderId");
+ALTER TABLE "OrderItem" DISABLE ROW LEVEL SECURITY;`,
+    createdAt: '2026-03-24',
+  },
 ];
 
 /**

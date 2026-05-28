@@ -1,7 +1,7 @@
 import { motion, AnimatePresence } from 'motion/react';
 import { X, Plus, Minus, Trash2, ShoppingBag } from 'lucide-react';
 import type { CartItem } from '../types';
-import { formatPrice, getDiscountedPrice } from '../constants';
+import { formatPrice, getDiscountedPrice, PLACEHOLDER_IMAGE } from '../constants';
 
 interface CartProps {
   isOpen: boolean;
@@ -88,10 +88,15 @@ export default function Cart({
                   return (
                     <div key={item.product.id} className="flex gap-3 bg-brand-cream rounded-xl p-3">
                       <img
-                        src={item.product.images[0]}
+                        src={item.product.images[0] || PLACEHOLDER_IMAGE}
                         alt={item.product.name}
+                        loading="lazy"
                         className="w-20 h-20 rounded-lg object-cover"
                         referrerPolicy="no-referrer"
+                        onError={(e) => {
+                          const t = e.currentTarget;
+                          if (t.src !== PLACEHOLDER_IMAGE) t.src = PLACEHOLDER_IMAGE;
+                        }}
                       />
                       <div className="flex-1 min-w-0">
                         <h4 className="font-medium text-sm text-brand-dark line-clamp-1">

@@ -1,12 +1,15 @@
 import type { Product, CategoryInfo, SubcategoryInfo } from './types';
 
+// Placeholder SVG inline (no network request) usado cuando una imagen externa falla
+export const PLACEHOLDER_IMAGE = "data:image/svg+xml;utf8,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 200 200'%3E%3Crect width='200' height='200' fill='%23F8BBD0'/%3E%3Ctext x='100' y='115' font-size='60' text-anchor='middle' dominant-baseline='middle'%3E🦋%3C/text%3E%3C/svg%3E";
+
 export const COMPANY = {
   name: 'Borboletas',
   tagline: 'Detalles hechos con amor',
   slogan: 'Regalos artesanales hechos a mano con calidad y servicio. Cada pieza es elaborada con dedicación para hacer de tu momento algo único e inolvidable.',
   instagram: 'https://www.instagram.com/borboletas_bog/',
   instagramHandle: '@borboletas_bog',
-  whatsapp: '+57 333 266 1702',
+  whatsapp: '+57 310 230 8013',
   whatsappMessage: 'Hola! Me interesa un producto de Borboletas 🦋',
   city: 'Bogota, Colombia',
   logo: 'https://i.postimg.cc/8cs0rvJm/logo-borboletas.png',

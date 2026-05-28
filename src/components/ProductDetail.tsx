@@ -5,7 +5,7 @@ import {
   Heart, Star, HandHeart, Truck, Palette,
 } from 'lucide-react';
 import type { Product } from '../types';
-import { formatPrice, getDiscountedPrice, COMPANY } from '../constants';
+import { formatPrice, getDiscountedPrice, COMPANY, PLACEHOLDER_IMAGE } from '../constants';
 
 interface ProductDetailProps {
   product: Product | null;
@@ -132,7 +132,7 @@ export default function ProductDetail({ product, isOpen, onClose, onAddToCart }:
                 )}
 
                 <motion.img
-                  src={product.images[0]}
+                  src={product.images[0] || PLACEHOLDER_IMAGE}
                   alt={product.name}
                   className="max-w-[85%] max-h-[85%] object-contain select-none drop-shadow-xl"
                   animate={{ scale: zoom }}
@@ -142,6 +142,10 @@ export default function ProductDetail({ product, isOpen, onClose, onAddToCart }:
                   dragElastic={0.1}
                   style={{ cursor: zoom > 1 ? 'grab' : 'zoom-in' }}
                   referrerPolicy="no-referrer"
+                  onError={(e) => {
+                    const t = e.currentTarget as HTMLImageElement;
+                    if (t.src !== PLACEHOLDER_IMAGE) t.src = PLACEHOLDER_IMAGE;
+                  }}
                 />
               </div>
 

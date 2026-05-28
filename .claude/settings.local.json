@@ -4,7 +4,9 @@
       "mcp__Claude_Preview__preview_start",
       "Bash(where npm.cmd)",
       "Bash(where npx.cmd)",
-      "Bash(node -e \":*)"
+      "Bash(node -e \":*)",
+      "Bash(npm run:*)",
+      "Bash(vercel --version)"
     ]
   }
 }

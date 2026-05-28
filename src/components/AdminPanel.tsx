@@ -31,7 +31,24 @@ type AdminTab = 'dashboard' | 'products' | 'clients' | 'orders' | 'bugs' | 'sqlh
 type SortField = 'name' | 'price' | 'category' | 'discountPercent';
 type SortDir = 'asc' | 'desc';
 
-const ADMIN_PIN = import.meta.env.VITE_ADMIN_PIN || 'borboletas2026';
+const ADMIN_PIN: string | undefined = import.meta.env.VITE_ADMIN_PIN;
+
+const ADMIN_SESSION_KEY = 'borboletas_admin_v2';
+
+function encodeAdminSession(pin: string): string {
+  return btoa(`b2026:${pin}:${pin.length}`);
+}
+
+function isAdminSessionValid(): boolean {
+  if (!ADMIN_PIN) return false;
+  const stored = sessionStorage.getItem(ADMIN_SESSION_KEY);
+  if (!stored) return false;
+  try {
+    return stored === encodeAdminSession(ADMIN_PIN);
+  } catch {
+    return false;
+  }
+}
 
 export default function AdminPanel({
   products,
@@ -42,9 +59,7 @@ export default function AdminPanel({
   onBack,
 }: AdminPanelProps) {
   // Auth
-  const [isAuthenticated, setIsAuthenticated] = useState(
-    () => sessionStorage.getItem('borboletas_admin') === 'true'
-  );
+  const [isAuthenticated, setIsAuthenticated] = useState(() => isAdminSessionValid());
   const [pinInput, setPinInput] = useState('');
   const [pinError, setPinError] = useState(false);
 
@@ -376,9 +391,13 @@ export default function AdminPanel({
   // ========== AUTH (after all hooks) ==========
   const handlePinSubmit = (e: React.FormEvent) => {
     e.preventDefault();
+    if (!ADMIN_PIN) {
+      setPinError(true);
+      return;
+    }
     if (pinInput === ADMIN_PIN) {
       setIsAuthenticated(true);
-      sessionStorage.setItem('borboletas_admin', 'true');
+      sessionStorage.setItem(ADMIN_SESSION_KEY, encodeAdminSession(pinInput));
       setPinError(false);
     } else {
       setPinError(true);
@@ -619,6 +638,7 @@ export default function AdminPanel({
                         <img
                           src={product.images[0] || ''}
                           alt=""
+                          loading="lazy"
                           className="w-12 h-12 rounded-xl object-cover bg-slate-100"
                           referrerPolicy="no-referrer"
                           onError={e => { (e.target as HTMLImageElement).src = 'data:image/svg+xml,<svg xmlns="http://www.w3.org/2000/svg" width="48" height="48"><rect fill="%23f1f5f9" width="48" height="48" rx="12"/><text x="24" y="30" text-anchor="middle" fill="%2394a3b8" font-size="18">?</text></svg>'; }}

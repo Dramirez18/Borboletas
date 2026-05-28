@@ -1,7 +1,7 @@
 import { motion } from 'motion/react';
 import { ShoppingCart, Sparkles, MessageCircle } from 'lucide-react';
 import type { Product } from '../types';
-import { formatPrice, getDiscountedPrice, COMPANY } from '../constants';
+import { formatPrice, getDiscountedPrice, COMPANY, PLACEHOLDER_IMAGE } from '../constants';
 
 interface ProductCardProps {
   product: Product;
@@ -30,10 +30,15 @@ export default function ProductCard({ product, onAddToCart, onViewDetail }: Prod
         onClick={() => onViewDetail(product)}
       >
         <img
-          src={product.images[0]}
+          src={product.images[0] || PLACEHOLDER_IMAGE}
           alt={product.name}
+          loading="lazy"
           className="w-full h-full object-contain group-hover:scale-105 transition-transform duration-500 rounded-xl"
           referrerPolicy="no-referrer"
+          onError={(e) => {
+            const t = e.currentTarget;
+            if (t.src !== PLACEHOLDER_IMAGE) t.src = PLACEHOLDER_IMAGE;
+          }}
         />
 
         {/* Badge descuento */}

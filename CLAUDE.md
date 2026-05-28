@@ -47,7 +47,7 @@ src/
 |-------|-------|
 | Nombre | Borboletas |
 | Tagline | Detalles hechos con amor |
-| WhatsApp | +57 333 266 1702 |
+| WhatsApp | +57 310 230 8013 |
 | Instagram | @borboletas_bog |
 | Instagram URL | https://www.instagram.com/borboletas_bog/ |
 | Ciudad | Bogota, Colombia |
@@ -85,9 +85,14 @@ src/
 | **admin** | Panel CRUD productos/clientes/pedidos, bug reports, migraciones SQL |
 | **user** | Ver catalogo, carrito, checkout, pasarela de pagos |
 
-- **Auth usuarios:** Login/registro por email (tabla Client en Supabase)
-- **Auth admin:** PIN configurado en `VITE_ADMIN_PIN` (.env.local) — default `borboletas2026`
-- **Admin actual:** dramirez180929@gmail.com (role='admin' en Client)
+- **Auth usuarios:** Email OTP via `supabase.auth.signInWithOtp` — código de 6 dígitos al correo, verificar con `verifyOtp`. Si Client no existe, paso adicional para completar perfil (nombre, teléfono, dirección, política).
+- **Auth admin:** rol `admin` en tabla Client + PIN configurado en `VITE_ADMIN_PIN` (.env.local) — sin fallback hardcoded, falla cerrado si la env var no existe.
+- **Gate admin:** sessionStorage con valor base64 codificado (`btoa('b2026:PIN:length')`) — bypass clásico de `'true'` ya no funciona.
+- **Admins actuales:** dramirez180929@gmail.com, sonillapilla123@gmail.com, admin@borboletas.com (role='admin' en Client)
+- **Config requerida en Supabase dashboard:**
+  - Auth → Providers → Email: enabled (default)
+  - Auth → Email Templates → "Magic Link" o "Confirm signup" con `{{ .Token }}` para el código
+  - SMTP por defecto de Supabase tiene rate limit (4/h en free) — configurar custom SMTP (Resend, SendGrid) cuando el volumen lo amerite
 
 ## Estado Actual del Proyecto
 
@@ -95,13 +100,14 @@ src/
 - **Backend:** Supabase PostgreSQL conectado con 7 migraciones
 - **Tablas Supabase:** Product, Client, Order, OrderItem, BugReport, SiteStats
 - **Admin Panel:** 6 tabs — Dashboard, Productos, Clientes, Pedidos, Bug Reports, SQL History
-- **Checkout:** Completo — formulario → confirmacion → pasarela → QR → WhatsApp
-- **Pasarela de pagos:** Nequi (QR pendiente), Bold (WhatsApp), Daviplata (proximamente)
+- **Checkout:** Completo — formulario → confirmacion → pasarela → completed (post-WhatsApp). Rollback automático si OrderItem.insert falla. Validaciones HTML5: phone regex Colombia, address minLength=10.
+- **Pasarela de pagos:** 4 métodos (Nequi, Daviplata, Bancolombia, Bold), todos → WhatsApp con mensaje pre-llenado del pedido. QR step disponible en código pero no usado hasta tener QRs reales.
 - **Bug Report Widget:** Boton flotante rojo (solo admin) con inspector de elementos y screenshot
 - **Contador de visitas:** Incremento atomico via Supabase RPC
 - **Politica de datos:** Ley 1581 de 2012, email contacto: sonillapilla123@gmail.com
 - **Precios:** Productos con precio=0 muestran "Consultar precio" con WhatsApp
-- **Imagenes:** 75+ imagenes en postimg.cc cargando correctamente
+- **Imagenes:** 75+ imagenes en postimg.cc con `loading="lazy"` y `onError` fallback a placeholder SVG inline (🦋 en fondo rosa)
+- **Carrito:** Persiste en `localStorage` (key `borboletas_cart`) — sobrevive recarga y cierre del navegador. Se limpia solo cuando usuario confirma "Ya envié el pago".
 
 ## Comandos
 
@@ -229,6 +235,17 @@ CREATE TABLE "SiteStats" (
 | 007 | Crear tablas Order y OrderItem | Pendiente de ejecutar |
 
 ## Reglas Operacionales para Agentes IA
+
+### CRITICO — Privacidad y seguridad del proyecto
+- **Este proyecto es CONFIDENCIAL y solo debe operarse desde este computador local (C:\Users\drami)**
+- La cuenta de Claude Code es compartida con otras personas en otros computadores
+- **NUNCA** abrir, mostrar, o exponer NADA relacionado con este proyecto en otras sesiones/computadores
+- **NUNCA** usar herramientas de navegador remoto (Chrome MCP, browser automation) que puedan mostrar contenido del proyecto en pantallas de otros usuarios
+- **TODAS** las acciones deben ejecutarse localmente en este computador
+- **NO** abrir tabs, ventanas, ni sesiones de navegador que puedan ser visibles en otros dispositivos
+- Si se necesita QC o testing visual, hacerlo exclusivamente con preview tools locales (preview_start, preview_screenshot, etc.)
+- Cualquier sesion que no sea en este computador local NO debe tener acceso ni visibilidad de este proyecto
+- Tratar toda la informacion del proyecto (URLs, credenciales, nombres, capturas) como privada
 
 ### CRITICO — Aislamiento de proyectos
 - **NUNCA** usar herramientas MCP/nativas conectadas a otros proyectos sin confirmacion explicita

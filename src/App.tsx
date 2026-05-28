@@ -19,7 +19,12 @@ import AuthModal from './components/AuthModal';
 
 export default function App() {
   const [currentView, setCurrentView] = useState('home');
-  const [cartItems, setCartItems] = useState<CartItem[]>([]);
+  const [cartItems, setCartItems] = useState<CartItem[]>(() => {
+    try {
+      const saved = localStorage.getItem('borboletas_cart');
+      return saved ? JSON.parse(saved) : [];
+    } catch { return []; }
+  });
   const [cartOpen, setCartOpen] = useState(false);
   const [user, setUser] = useState<User | null>(() => {
     try {
@@ -36,7 +41,7 @@ export default function App() {
 
   // Checkout state
   const [checkoutForm, setCheckoutForm] = useState({ name: '', phone: '', address: '', date: '', time: '' });
-  const [checkoutStep, setCheckoutStep] = useState<'form' | 'success' | 'payment' | 'qr'>('form');
+  const [checkoutStep, setCheckoutStep] = useState<'form' | 'success' | 'payment' | 'qr' | 'completed'>('form');
   const [checkoutSaving, setCheckoutSaving] = useState(false);
   const [lastOrderId, setLastOrderId] = useState<number | null>(null);
   const [selectedPayment, setSelectedPayment] = useState<string | null>(null);
@@ -96,6 +101,24 @@ export default function App() {
     if (user) localStorage.setItem('borboletas_user', JSON.stringify(user));
     else localStorage.removeItem('borboletas_user');
   }, [user]);
+
+  // Persistir carrito en localStorage (sobrevive recarga/cierre del navegador)
+  useEffect(() => {
+    if (cartItems.length > 0) {
+      localStorage.setItem('borboletas_cart', JSON.stringify(cartItems));
+    } else {
+      localStorage.removeItem('borboletas_cart');
+    }
+  }, [cartItems]);
+
+  // Sincronizar con Supabase Auth: si la sesión expira o se cierra desde otra tab, limpiar usuario
+  useEffect(() => {
+    if (!supabase) return;
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((event) => {
+      if (event === 'SIGNED_OUT') setUser(null);
+    });
+    return () => subscription.unsubscribe();
+  }, []);
 
   // Cargar productos desde Supabase con fallback a constants
   useEffect(() => {
@@ -584,37 +607,70 @@ export default function App() {
                     quantity: i.quantity,
                     price: i.product.discountPercent > 0 ? getDiscountedPrice(i.product.price, i.product.discountPercent) : i.product.price,
                   }));
-                  await supabase.from('OrderItem').insert(items);
+                  const { error: itemError } = await supabase.from('OrderItem').insert(items);
+                  if (itemError) {
+                    // Rollback: eliminar la Order creada para no dejar pedidos huérfanos
+                    await supabase.from('Order').delete().eq('id', orderData.id);
+                    alert(`No se pudieron guardar los productos del pedido.\nTu carrito sigue intacto, intenta de nuevo.\n\nDetalle: ${itemError.message}`);
+                    setCheckoutSaving(false);
+                    return;
+                  }
                   setLastOrderId(orderData.id);
                   setCheckoutStep('success');
-                } catch (err) { alert('Error inesperado'); console.error(err); }
+                } catch (err) {
+                  const detail = err instanceof Error ? err.message : 'Error desconocido';
+                  alert(`No pudimos procesar tu pedido. Tu carrito sigue intacto.\n\nDetalle: ${detail}`);
+                  console.error('[Checkout]', err);
+                }
                 setCheckoutSaving(false);
               }}>
                 <div>
                   <label className="text-xs font-semibold text-brand-gray uppercase tracking-wider block mb-1">Nombre del destinatario *</label>
                   <div className="relative">
                     <Users className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-brand-gray/50" />
-                    <input type="text" value={checkoutForm.name} onChange={e => setCheckoutForm({ ...checkoutForm, name: e.target.value })}
-                      placeholder="Nombre completo" required
-                      className="w-full pl-10 pr-4 py-3 rounded-xl border border-gray-200 text-sm focus:border-brand-pink focus:ring-2 focus:ring-brand-pink/20 outline-none" />
+                    <input
+                      type="text"
+                      value={checkoutForm.name}
+                      onChange={e => setCheckoutForm({ ...checkoutForm, name: e.target.value })}
+                      placeholder="Nombre completo"
+                      required
+                      minLength={2}
+                      maxLength={80}
+                      className="w-full pl-10 pr-4 py-3 rounded-xl border border-gray-200 text-sm focus:border-brand-pink focus:ring-2 focus:ring-brand-pink/20 outline-none"
+                    />
                   </div>
                 </div>
                 <div>
                   <label className="text-xs font-semibold text-brand-gray uppercase tracking-wider block mb-1">Celular *</label>
                   <div className="relative">
                     <PhoneIcon className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-brand-gray/50" />
-                    <input type="tel" value={checkoutForm.phone} onChange={e => setCheckoutForm({ ...checkoutForm, phone: e.target.value })}
-                      placeholder="3XX XXX XXXX" required
-                      className="w-full pl-10 pr-4 py-3 rounded-xl border border-gray-200 text-sm focus:border-brand-pink focus:ring-2 focus:ring-brand-pink/20 outline-none" />
+                    <input
+                      type="tel"
+                      value={checkoutForm.phone}
+                      onChange={e => setCheckoutForm({ ...checkoutForm, phone: e.target.value })}
+                      placeholder="3XX XXX XXXX"
+                      required
+                      pattern="^(\+?57\s?)?3[0-9]{2}\s?[0-9]{3}\s?[0-9]{4}$"
+                      title="Celular colombiano: empieza con 3 y tiene 10 dígitos. Ej: 3102308013"
+                      className="w-full pl-10 pr-4 py-3 rounded-xl border border-gray-200 text-sm focus:border-brand-pink focus:ring-2 focus:ring-brand-pink/20 outline-none"
+                    />
                   </div>
                 </div>
                 <div>
                   <label className="text-xs font-semibold text-brand-gray uppercase tracking-wider block mb-1">Dirección de entrega *</label>
                   <div className="relative">
                     <MapPin className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-brand-gray/50" />
-                    <input type="text" value={checkoutForm.address} onChange={e => setCheckoutForm({ ...checkoutForm, address: e.target.value })}
-                      placeholder="Calle, carrera, barrio..." required
-                      className="w-full pl-10 pr-4 py-3 rounded-xl border border-gray-200 text-sm focus:border-brand-pink focus:ring-2 focus:ring-brand-pink/20 outline-none" />
+                    <input
+                      type="text"
+                      value={checkoutForm.address}
+                      onChange={e => setCheckoutForm({ ...checkoutForm, address: e.target.value })}
+                      placeholder="Calle, carrera, barrio, número, apto..."
+                      required
+                      minLength={10}
+                      maxLength={200}
+                      title="Incluye calle/carrera, número, barrio y referencia"
+                      className="w-full pl-10 pr-4 py-3 rounded-xl border border-gray-200 text-sm focus:border-brand-pink focus:ring-2 focus:ring-brand-pink/20 outline-none"
+                    />
                   </div>
                 </div>
                 <div className="grid grid-cols-2 gap-4">
@@ -680,37 +736,37 @@ export default function App() {
                 <p className="text-white/70 text-sm mt-1">Pedido #{lastOrderId}</p>
               </div>
               <div className="p-6 space-y-3">
+                <p className="text-xs text-brand-gray bg-amber-50 border border-amber-200 rounded-lg p-3 mb-2">
+                  💬 Coordinaremos el pago contigo por WhatsApp para enviarte el QR o link correspondiente.
+                </p>
                 {[
-                  { id: 'nequi', name: 'Nequi', color: 'bg-purple-500', available: true, desc: 'Pago con QR' },
-                  { id: 'daviplata', name: 'Daviplata', color: 'bg-red-500', available: false, desc: 'Próximamente' },
-                  { id: 'bold', name: 'Bold / Datáfono', color: 'bg-blue-600', available: true, desc: 'Solicitar link por WhatsApp' },
+                  { id: 'nequi', name: 'Nequi', color: 'bg-purple-600', textColor: 'text-white', desc: 'Transferencia desde la app Nequi' },
+                  { id: 'daviplata', name: 'Daviplata', color: 'bg-red-600', textColor: 'text-white', desc: 'Transferencia desde la app Daviplata' },
+                  { id: 'bancolombia', name: 'Bancolombia', color: 'bg-yellow-400', textColor: 'text-gray-900', desc: 'Transferencia o consignación' },
+                  { id: 'bold', name: 'Bold / Datáfono', color: 'bg-blue-600', textColor: 'text-white', desc: 'Pago con tarjeta vía link Bold' },
                 ].map(method => (
-                  <button key={method.id} disabled={!method.available}
+                  <button
+                    key={method.id}
                     onClick={() => {
-                      if (method.id === 'bold') {
-                        const total = cartItems.reduce((s, i) => {
-                          const p = i.product.discountPercent > 0 ? getDiscountedPrice(i.product.price, i.product.discountPercent) : i.product.price;
-                          return s + p * i.quantity;
-                        }, 0);
-                        const msg = `Hola Borboletas! 🦋 Quiero pagar mi pedido #${lastOrderId} por ${formatPrice(total)} con datáfono/Bold. ¿Me pueden enviar el link de pago?`;
-                        window.open(`https://wa.me/${COMPANY.whatsapp.replace(/[^0-9]/g, '')}?text=${encodeURIComponent(msg)}`, '_blank');
-                        setCartItems([]);
-                        return;
-                      }
+                      const total = cartItems.reduce((s, i) => {
+                        const p = i.product.discountPercent > 0 ? getDiscountedPrice(i.product.price, i.product.discountPercent) : i.product.price;
+                        return s + p * i.quantity;
+                      }, 0);
+                      const itemList = cartItems.map(i => `• ${i.product.name} x${i.quantity}`).join('\n');
+                      const msg = `Hola Borboletas! 🦋\n\nQuiero pagar mi pedido #${lastOrderId} con *${method.name}*.\n\n${itemList}\n\n💰 Total: ${formatPrice(total)}\n📍 ${checkoutForm.address}\n📅 ${checkoutForm.date} ${checkoutForm.time}\n📞 ${checkoutForm.phone}\n\n¿Me pueden enviar los datos para completar el pago?`;
+                      window.open(`https://wa.me/${COMPANY.whatsapp.replace(/[^0-9]/g, '')}?text=${encodeURIComponent(msg)}`, '_blank');
                       setSelectedPayment(method.id);
-                      setCheckoutStep('qr');
+                      setCheckoutStep('completed');
                     }}
-                    className={`w-full flex items-center gap-4 p-4 rounded-xl border-2 transition-all cursor-pointer ${
-                      method.available ? 'border-gray-200 hover:border-brand-pink hover:shadow-md' : 'border-gray-100 opacity-50 cursor-not-allowed'
-                    }`}>
-                    <div className={`w-12 h-12 ${method.color} rounded-xl flex items-center justify-center text-white font-bold text-lg`}>
-                      {method.name[0]}
+                    className="w-full flex items-center gap-4 p-4 rounded-xl border-2 border-gray-200 hover:border-brand-pink hover:shadow-md transition-all cursor-pointer"
+                  >
+                    <div className={`min-w-[110px] h-12 ${method.color} ${method.textColor} rounded-xl flex items-center justify-center font-bold text-sm px-3 shrink-0 shadow-sm`}>
+                      {method.name}
                     </div>
                     <div className="text-left flex-1">
-                      <p className="font-bold text-brand-dark">{method.name}</p>
                       <p className="text-xs text-brand-gray">{method.desc}</p>
                     </div>
-                    {!method.available && <span className="text-[10px] bg-gray-100 text-gray-500 px-2 py-1 rounded-full font-bold">PRÓXIMAMENTE</span>}
+                    <MessageCircle className="w-5 h-5 text-emerald-500 shrink-0" />
                   </button>
                 ))}
               </div>
@@ -752,14 +808,66 @@ export default function App() {
                   const itemList = cartItems.map(i => `• ${i.product.name} x${i.quantity}`).join('\n');
                   const msg = `Hola Borboletas! 🦋\n\nComprobante de pago:\n📋 Pedido #${lastOrderId}\n${itemList}\n💰 Total: ${formatPrice(total)}\n💳 Método: ${selectedPayment}\n\n📍 ${checkoutForm.address}\n📅 ${checkoutForm.date} ${checkoutForm.time}\n📞 ${checkoutForm.phone}`;
                   window.open(`https://wa.me/${COMPANY.whatsapp.replace(/[^0-9]/g, '')}?text=${encodeURIComponent(msg)}`, '_blank');
-                  setCartItems([]);
-                  setCheckoutStep('form');
-                  setCheckoutForm({ name: '', phone: '', address: '', date: '', time: '' });
-                  navigateTo('home');
+                  setCheckoutStep('completed');
                 }}
                   className="w-full bg-emerald-500 text-white py-4 rounded-xl font-bold text-base hover:bg-emerald-600 transition-all cursor-pointer flex items-center justify-center gap-2">
                   <MessageCircle className="w-5 h-5" /> Enviar comprobante por WhatsApp
                 </button>
+              </div>
+            </div>
+          )}
+
+          {/* STEP 5: Completed (post-WhatsApp) — el carrito NO se limpia hasta confirmación explícita */}
+          {checkoutStep === 'completed' && (
+            <div className="bg-white rounded-2xl shadow-lg border border-gray-100 overflow-hidden text-center">
+              <div className="bg-gradient-to-r from-emerald-500 to-emerald-600 px-6 py-5">
+                <h2 className="text-white font-heading font-bold text-xl">Te abrimos WhatsApp</h2>
+                <p className="text-white/80 text-sm mt-1">Pedido #{lastOrderId}</p>
+              </div>
+              <div className="p-8">
+                <div className="w-20 h-20 bg-emerald-100 rounded-full flex items-center justify-center mx-auto mb-5">
+                  <MessageCircle className="w-10 h-10 text-emerald-500" />
+                </div>
+                <h3 className="font-heading font-bold text-xl text-brand-dark mb-2">¿Pudiste enviar el comprobante?</h3>
+                <p className="text-brand-gray text-sm mb-6">
+                  Confirma tu pago para que podamos procesar tu pedido. Si WhatsApp no abrió o se cerró sin enviar, vuelve a intentarlo.
+                </p>
+
+                <div className="space-y-3">
+                  <button
+                    onClick={() => {
+                      const total = cartItems.reduce((s, i) => {
+                        const p = i.product.discountPercent > 0 ? getDiscountedPrice(i.product.price, i.product.discountPercent) : i.product.price;
+                        return s + p * i.quantity;
+                      }, 0);
+                      const itemList = cartItems.map(i => `• ${i.product.name} x${i.quantity}`).join('\n');
+                      const msg = selectedPayment === 'bold'
+                        ? `Hola Borboletas! 🦋 Quiero pagar mi pedido #${lastOrderId} por ${formatPrice(total)} con datáfono/Bold. ¿Me pueden enviar el link de pago?`
+                        : `Hola Borboletas! 🦋\n\nComprobante de pago:\n📋 Pedido #${lastOrderId}\n${itemList}\n💰 Total: ${formatPrice(total)}\n💳 Método: ${selectedPayment}\n\n📍 ${checkoutForm.address}\n📅 ${checkoutForm.date} ${checkoutForm.time}\n📞 ${checkoutForm.phone}`;
+                      window.open(`https://wa.me/${COMPANY.whatsapp.replace(/[^0-9]/g, '')}?text=${encodeURIComponent(msg)}`, '_blank');
+                    }}
+                    className="w-full bg-white border-2 border-emerald-500 text-emerald-600 py-3 rounded-xl font-semibold hover:bg-emerald-50 transition-all cursor-pointer flex items-center justify-center gap-2"
+                  >
+                    <MessageCircle className="w-5 h-5" /> Volver a abrir WhatsApp
+                  </button>
+                  <button
+                    onClick={() => {
+                      setCartItems([]);
+                      setCheckoutStep('form');
+                      setCheckoutForm({ name: '', phone: '', address: '', date: '', time: '' });
+                      setSelectedPayment(null);
+                      setLastOrderId(null);
+                      navigateTo('home');
+                    }}
+                    className="w-full bg-gradient-to-r from-brand-pink to-brand-purple text-white py-3 rounded-xl font-bold hover:shadow-lg transition-all cursor-pointer flex items-center justify-center gap-2"
+                  >
+                    <CheckCircle2 className="w-5 h-5" /> Ya envié el pago
+                  </button>
+                </div>
+
+                <p className="text-xs text-brand-gray mt-6">
+                  Tu carrito permanece guardado por si necesitas regresar.
+                </p>
               </div>
             </div>
           )}

@@ -184,6 +184,128 @@ CREATE INDEX IF NOT EXISTS "OrderItem_orderId_idx" ON "OrderItem"("orderId");
 ALTER TABLE "OrderItem" DISABLE ROW LEVEL SECURITY;`,
     createdAt: '2026-03-24',
   },
+  {
+    id: '008_enable_rls_policies',
+    title: 'Habilitar RLS con políticas de seguridad',
+    description: 'Activa Row Level Security en todas las tablas. La anon key deja de dar acceso total: catálogo público, datos de cada cliente solo para su dueño, escritura de productos solo admin. Requiere auth real (Email OTP). Re-ejecutable.',
+    sql: `-- ============================================================
+-- Migración 008: Habilitar Row Level Security (RLS) + políticas
+-- ============================================================
+-- Protege la base: la anon key (pública en el bundle JS) ya NO da
+-- acceso total. Cada tabla define quién puede leer/escribir.
+-- Usa el auth real (Email OTP) vía auth.email().
+-- Re-ejecutable: DROP POLICY IF EXISTS antes de cada CREATE.
+
+-- ---------- Funciones auxiliares (SECURITY DEFINER) ----------
+-- SECURITY DEFINER = corren con permisos del dueño e IGNORAN RLS.
+-- Esto evita recursión infinita al consultar Client desde una policy.
+
+CREATE OR REPLACE FUNCTION public.is_admin()
+RETURNS BOOLEAN LANGUAGE sql SECURITY DEFINER SET search_path = public STABLE
+AS $$
+  SELECT EXISTS (
+    SELECT 1 FROM public."Client"
+    WHERE email = auth.email() AND role = 'admin'
+  );
+$$;
+
+CREATE OR REPLACE FUNCTION public.current_client_id()
+RETURNS INTEGER LANGUAGE sql SECURITY DEFINER SET search_path = public STABLE
+AS $$
+  SELECT id FROM public."Client" WHERE email = auth.email() LIMIT 1;
+$$;
+
+GRANT EXECUTE ON FUNCTION public.is_admin() TO anon, authenticated;
+GRANT EXECUTE ON FUNCTION public.current_client_id() TO anon, authenticated;
+
+-- ---------- PRODUCT: catálogo público, escritura solo admin ----------
+ALTER TABLE "Product" ENABLE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS "product_public_read" ON "Product";
+DROP POLICY IF EXISTS "product_admin_insert" ON "Product";
+DROP POLICY IF EXISTS "product_admin_update" ON "Product";
+DROP POLICY IF EXISTS "product_admin_delete" ON "Product";
+CREATE POLICY "product_public_read" ON "Product"
+  FOR SELECT TO public USING (true);
+CREATE POLICY "product_admin_insert" ON "Product"
+  FOR INSERT TO authenticated WITH CHECK (public.is_admin());
+CREATE POLICY "product_admin_update" ON "Product"
+  FOR UPDATE TO authenticated USING (public.is_admin()) WITH CHECK (public.is_admin());
+CREATE POLICY "product_admin_delete" ON "Product"
+  FOR DELETE TO authenticated USING (public.is_admin());
+
+-- ---------- CLIENT: cada quien su fila; admin ve todo ----------
+ALTER TABLE "Client" ENABLE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS "client_select_own_or_admin" ON "Client";
+DROP POLICY IF EXISTS "client_insert_own" ON "Client";
+DROP POLICY IF EXISTS "client_update_own_or_admin" ON "Client";
+DROP POLICY IF EXISTS "client_delete_admin" ON "Client";
+CREATE POLICY "client_select_own_or_admin" ON "Client"
+  FOR SELECT TO authenticated USING (email = auth.email() OR public.is_admin());
+CREATE POLICY "client_insert_own" ON "Client"
+  FOR INSERT TO authenticated WITH CHECK (email = auth.email());
+CREATE POLICY "client_update_own_or_admin" ON "Client"
+  FOR UPDATE TO authenticated
+  USING (email = auth.email() OR public.is_admin())
+  WITH CHECK (email = auth.email() OR public.is_admin());
+CREATE POLICY "client_delete_admin" ON "Client"
+  FOR DELETE TO authenticated USING (public.is_admin());
+
+-- ---------- ORDER: cada cliente sus pedidos; admin ve todo ----------
+ALTER TABLE "Order" ENABLE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS "order_select_own_or_admin" ON "Order";
+DROP POLICY IF EXISTS "order_insert_own" ON "Order";
+DROP POLICY IF EXISTS "order_update_admin" ON "Order";
+DROP POLICY IF EXISTS "order_delete_own_or_admin" ON "Order";
+CREATE POLICY "order_select_own_or_admin" ON "Order"
+  FOR SELECT TO authenticated USING ("clientId" = public.current_client_id() OR public.is_admin());
+CREATE POLICY "order_insert_own" ON "Order"
+  FOR INSERT TO authenticated WITH CHECK ("clientId" = public.current_client_id());
+CREATE POLICY "order_update_admin" ON "Order"
+  FOR UPDATE TO authenticated USING (public.is_admin()) WITH CHECK (public.is_admin());
+CREATE POLICY "order_delete_own_or_admin" ON "Order"
+  FOR DELETE TO authenticated USING ("clientId" = public.current_client_id() OR public.is_admin());
+
+-- ---------- ORDERITEM: ítems de pedidos propios; admin ve todo ----------
+ALTER TABLE "OrderItem" ENABLE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS "orderitem_select_own_or_admin" ON "OrderItem";
+DROP POLICY IF EXISTS "orderitem_insert_own" ON "OrderItem";
+CREATE POLICY "orderitem_select_own_or_admin" ON "OrderItem"
+  FOR SELECT TO authenticated USING (
+    "orderId" IN (SELECT id FROM public."Order" WHERE "clientId" = public.current_client_id())
+    OR public.is_admin()
+  );
+CREATE POLICY "orderitem_insert_own" ON "OrderItem"
+  FOR INSERT TO authenticated WITH CHECK (
+    "orderId" IN (SELECT id FROM public."Order" WHERE "clientId" = public.current_client_id())
+  );
+
+-- ---------- BUGREPORT: solo admin ----------
+ALTER TABLE "BugReport" ENABLE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS "bugreport_admin_all" ON "BugReport";
+CREATE POLICY "bugreport_admin_all" ON "BugReport"
+  FOR ALL TO authenticated USING (public.is_admin()) WITH CHECK (public.is_admin());
+
+-- ---------- SITESTATS: lectura pública, escritura vía RPC ----------
+ALTER TABLE "SiteStats" ENABLE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS "sitestats_public_read" ON "SiteStats";
+CREATE POLICY "sitestats_public_read" ON "SiteStats"
+  FOR SELECT TO public USING (true);
+
+-- Recrear increment_visits como SECURITY DEFINER para que pueda
+-- actualizar el contador a pesar de RLS (no hay policy de UPDATE).
+CREATE OR REPLACE FUNCTION increment_visits()
+RETURNS INTEGER LANGUAGE plpgsql SECURITY DEFINER SET search_path = public
+AS $$
+DECLARE new_count INTEGER;
+BEGIN
+  UPDATE "SiteStats" SET "visitCount" = "visitCount" + 1, "updatedAt" = NOW() WHERE id = 'main';
+  SELECT "visitCount" INTO new_count FROM "SiteStats" WHERE id = 'main';
+  RETURN new_count;
+END;
+$$;
+GRANT EXECUTE ON FUNCTION increment_visits() TO anon, authenticated;`,
+    createdAt: '2026-05-28',
+  },
 ];
 
 /**
@@ -207,7 +329,15 @@ export async function executeMigrationSQL(
 }
 
 /**
- * Siembra los 75 productos iniciales en Supabase
+ * Siembra productos en Supabase de forma NO destructiva.
+ *
+ * IMPORTANTE: usa `INSERT ... ON CONFLICT DO NOTHING` (ignoreDuplicates),
+ * por lo que SOLO inserta productos cuyo `id` aún no existe en la base.
+ * NUNCA sobreescribe filas existentes: los precios, nombres y descripciones
+ * que la dueña haya editado desde el Admin Panel quedan intactos.
+ *
+ * Esto la hace segura e idempotente: sirve para "agregar productos nuevos
+ * del catálogo (constants.ts) que falten en la base", sin pisar lo configurado.
  */
 export async function seedProducts(
   supabase: SupabaseClient
@@ -229,16 +359,20 @@ export async function seedProducts(
       updatedAt: new Date().toISOString(),
     }));
 
-    const { error } = await supabase
+    // ignoreDuplicates: true -> ON CONFLICT (id) DO NOTHING.
+    // Solo inserta los que faltan; jamás actualiza los existentes.
+    const { data, error } = await supabase
       .from('Product')
-      .upsert(products, { onConflict: 'id' });
+      .upsert(products, { onConflict: 'id', ignoreDuplicates: true })
+      .select('id');
 
     if (error) {
       console.error('[Seed] Error al sembrar productos:', error.message, error.details, error.hint);
       return { success: false, count: 0, error: error.message };
     }
 
-    return { success: true, count: products.length };
+    // `data` trae solo las filas realmente insertadas (las nuevas).
+    return { success: true, count: data?.length ?? 0 };
   } catch (err) {
     return { success: false, count: 0, error: String(err) };
   }

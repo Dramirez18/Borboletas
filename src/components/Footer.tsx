@@ -54,6 +54,10 @@ export default function Footer() {
                 <span>{COMPANY.whatsapp}</span>
               </div>
               <div className="flex items-center gap-2">
+                <Phone className="w-4 h-4 text-brand-pink-light flex-shrink-0" />
+                <span>{COMPANY.whatsapp2}</span>
+              </div>
+              <div className="flex items-center gap-2">
                 <MessageCircle className="w-4 h-4 text-green-400 flex-shrink-0" />
                 <a href={whatsappLink} target="_blank" rel="noopener noreferrer" className="hover:text-white transition-colors">
                   WhatsApp

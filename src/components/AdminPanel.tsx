@@ -468,7 +468,7 @@ export default function AdminPanel({
           </button>
           <div>
             <h1 className="font-bold text-2xl text-slate-800">Panel de Administración</h1>
-            <p className="text-sm text-slate-400">Borboletas — Gestión de productos</p>
+            <p className="text-sm text-slate-400">Muñecos ConSentido — Gestión de productos</p>
           </div>
         </div>
         <div className="flex items-center gap-3">

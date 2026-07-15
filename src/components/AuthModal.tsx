@@ -515,7 +515,7 @@ export default function AuthModal({ isOpen, onClose, user, onLogin, onLogout }: 
           <div className="p-6 text-sm text-slate-600 space-y-4 leading-relaxed">
             <section>
               <h4 className="font-bold text-slate-800 mb-1">1. Responsable del tratamiento</h4>
-              <p><strong>Borboletas</strong> — Detalles hechos con amor<br/>Bogotá, Colombia<br/>Correo: sonillapilla123@gmail.com</p>
+              <p><strong>Muñecos ConSentido</strong> — Hechos con el Alma y Corazón<br/>Bogotá, Colombia<br/>Correo: sonillapilla123@gmail.com</p>
             </section>
             <section>
               <h4 className="font-bold text-slate-800 mb-1">2. Datos personales recopilados</h4>

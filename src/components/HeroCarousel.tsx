@@ -1,171 +1,308 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
-import { ChevronLeft, ChevronRight, Sparkles } from 'lucide-react';
+import { ChevronLeft, ChevronRight, Sparkles, Star, ArrowRight } from 'lucide-react';
+import type { ProductCategory } from '../types';
+import { PLACEHOLDER_IMAGE } from '../constants';
+
+const IMG = 'https://i.postimg.cc';
 
 interface Slide {
+  key: string;
+  label: string;
   title: string;
   subtitle: string;
   cta: string;
   gradient: string;
   emoji: string;
+  image: string;
+  category: ProductCategory | null;
+  accent: string;
 }
 
 const slides: Slide[] = [
   {
-    title: 'Detalles Hechos con Amor',
-    subtitle: 'Regalos artesanales únicos, elaborados a mano con calidad y dedicación para cada momento especial',
+    key: 'brand',
+    label: 'Muñecos ConSentido',
+    title: 'Hechos con el Alma y Corazón',
+    subtitle: 'Muñecos y detalles artesanales, elaborados a mano con dedicación para cada momento especial.',
     cta: 'Ver Catálogo',
     gradient: 'from-brand-pink via-brand-purple to-brand-pink-dark',
-    emoji: '🦋',
+    emoji: '💗',
+    image: `${IMG}/Y2ncqrG4/familia-1.png`,
+    category: null,
+    accent: 'text-brand-pink',
   },
   {
-    title: 'Época de Navidad',
-    subtitle: 'Renos, Papá Noel, muñecos de nieve y toda la magia navideña en piezas artesanales',
+    key: 'navidad',
+    label: 'Época de Navidad',
+    title: 'La Magia de la Navidad',
+    subtitle: 'Papá y Mamá Noel, renos, osos polares y muñecos de nieve para llenar tu hogar de encanto.',
     cta: 'Ver Navidad',
-    gradient: 'from-red-700 via-red-500 to-green-700',
+    gradient: 'from-red-700 via-red-600 to-green-700',
     emoji: '🎄',
+    image: `${IMG}/XJLR53sP/papas-noe-pareja-2.png`,
+    category: 'navidad',
+    accent: 'text-red-600',
   },
   {
-    title: 'Época de Halloween',
-    subtitle: 'Brujas, gatos y espantapájaros adorablemente terroríficos para la noche más divertida',
+    key: 'halloween',
+    label: 'Época de Halloween',
+    title: 'Dulce o Truco',
+    subtitle: 'Brujas, gatos y personajes adorablemente terroríficos para la noche más divertida del año.',
     cta: 'Ver Halloween',
     gradient: 'from-orange-600 via-orange-500 to-purple-800',
     emoji: '🎃',
+    image: `${IMG}/rmjB4cf1/bruja-1.png`,
+    category: 'halloween',
+    accent: 'text-orange-600',
   },
   {
-    title: 'Punteros y Agendas',
-    subtitle: 'Útiles escolares decorados a mano con personajes únicos y llenos de color',
+    key: 'desayunos_sorpresa',
+    label: 'Desayunos Sorpresa',
+    title: 'Detalles que Enamoran',
+    subtitle: 'Figuras y decoración artesanal en foamy para sorprender con un desayuno inolvidable.',
+    cta: 'Ver Detalles',
+    gradient: 'from-pink-500 via-rose-400 to-amber-400',
+    emoji: '🎁',
+    image: `${IMG}/wMBScPPp/fommy-2.png`,
+    category: 'desayunos_sorpresa',
+    accent: 'text-pink-600',
+  },
+  {
+    key: 'lapices_cuadernos',
+    label: 'Punteros y Agendas',
+    title: 'Escribe con Estilo',
+    subtitle: 'Punteros y agendas decorados a mano con personajes únicos y llenos de color.',
     cta: 'Ver Colección',
     gradient: 'from-blue-500 via-cyan-400 to-teal-500',
     emoji: '✏️',
+    image: `${IMG}/B6JWttBX/cuaderno-1.png`,
+    category: 'lapices_cuadernos',
+    accent: 'text-blue-600',
   },
   {
-    title: 'Tejidos Artesanales',
-    subtitle: 'Piezas tejidas a mano con lana de alta calidad, cada puntada hecha con amor y dedicación',
+    key: 'tejidos',
+    label: 'Tejidos Artesanales',
+    title: 'Tejido con Amor',
+    subtitle: 'Piezas tejidas a mano con lana de alta calidad, cada puntada hecha con dedicación.',
     cta: 'Ver Tejidos',
     gradient: 'from-rose-400 via-fuchsia-400 to-violet-500',
     emoji: '🧶',
-  },
-  {
-    title: 'Hasta 50% de Descuento',
-    subtitle: 'Aprovecha nuestras ofertas especiales en productos seleccionados',
-    cta: 'Ver Ofertas',
-    gradient: 'from-brand-purple via-brand-pink to-brand-amber',
-    emoji: '🔥',
+    image: `${IMG}/tRS0CqZJ/tejido-1.png`,
+    category: 'tejidos',
+    accent: 'text-fuchsia-600',
   },
 ];
 
+const AUTOPLAY_MS = 6000;
+
 interface HeroCarouselProps {
   onNavigate: (view: string) => void;
+  onSelectCategory: (cat: ProductCategory | null) => void;
 }
 
-export default function HeroCarousel({ onNavigate }: HeroCarouselProps) {
+export default function HeroCarousel({ onNavigate, onSelectCategory }: HeroCarouselProps) {
   const [current, setCurrent] = useState(0);
+  const [paused, setPaused] = useState(false);
+  const [direction, setDirection] = useState(1);
 
-  const next = useCallback(() => {
-    setCurrent((c) => (c + 1) % slides.length);
+  const goTo = useCallback((i: number, dir: number) => {
+    setDirection(dir);
+    setCurrent((i + slides.length) % slides.length);
   }, []);
 
-  const prev = () => {
-    setCurrent((c) => (c - 1 + slides.length) % slides.length);
-  };
+  const next = useCallback(() => goTo(current + 1, 1), [current, goTo]);
+  const prev = useCallback(() => goTo(current - 1, -1), [current, goTo]);
 
+  // Autoplay (se pausa al pasar el mouse por encima)
+  const nextRef = useRef(next);
+  nextRef.current = next;
   useEffect(() => {
-    const timer = setInterval(next, 5000);
+    if (paused) return;
+    const timer = setInterval(() => nextRef.current(), AUTOPLAY_MS);
     return () => clearInterval(timer);
-  }, [next]);
+  }, [paused, current]);
 
   const slide = slides[current];
 
+  const handleCta = () => {
+    if (slide.category) onSelectCategory(slide.category);
+    else onNavigate('catalog');
+  };
+
   return (
     <div className="max-w-[1400px] mx-auto px-4 sm:px-8 lg:px-12 mt-6">
-    <div className="relative overflow-hidden rounded-2xl">
-      <AnimatePresence mode="wait">
-        <motion.div
-          key={current}
-          initial={{ opacity: 0, x: 80 }}
-          animate={{ opacity: 1, x: 0 }}
-          exit={{ opacity: 0, x: -80 }}
-          transition={{ duration: 0.5 }}
-          className={`bg-gradient-to-r ${slide.gradient} py-20 sm:py-28 px-10 sm:px-20 lg:px-32 text-white relative flex items-center justify-center`}
+      <div
+        className="relative overflow-hidden rounded-3xl shadow-xl"
+        onMouseEnter={() => setPaused(true)}
+        onMouseLeave={() => setPaused(false)}
+      >
+        <AnimatePresence mode="wait" custom={direction}>
+          <motion.div
+            key={slide.key}
+            custom={direction}
+            initial={{ opacity: 0, x: direction * 60 }}
+            animate={{ opacity: 1, x: 0 }}
+            exit={{ opacity: 0, x: direction * -60 }}
+            transition={{ duration: 0.5, ease: 'easeInOut' }}
+            className={`relative bg-gradient-to-br ${slide.gradient}`}
+          >
+            {/* Blobs decorativos */}
+            <div className="pointer-events-none absolute inset-0 overflow-hidden">
+              <div className="absolute -top-24 -right-20 w-80 h-80 bg-white/10 rounded-full blur-3xl" />
+              <div className="absolute -bottom-28 -left-16 w-96 h-96 bg-black/10 rounded-full blur-3xl" />
+              <div className="absolute top-1/3 left-1/4 text-white/10 text-[10rem] leading-none select-none hidden md:block">
+                {slide.emoji}
+              </div>
+            </div>
+
+            {/* Contenido */}
+            <div className="relative z-10 grid md:grid-cols-2 gap-6 items-center min-h-[580px] sm:min-h-[460px] lg:min-h-[440px] px-6 sm:px-10 lg:px-16 py-10">
+              {/* Texto */}
+              <div className="order-2 md:order-1 flex flex-col items-center md:items-start text-center md:text-left text-white">
+                <motion.span
+                  initial={{ opacity: 0, y: 16 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  transition={{ delay: 0.15 }}
+                  className="inline-flex items-center gap-2 bg-white/20 backdrop-blur-sm px-4 py-1.5 rounded-full text-xs sm:text-sm font-semibold uppercase tracking-wider mb-5"
+                >
+                  <span className="text-base leading-none">{slide.emoji}</span>
+                  {slide.label}
+                </motion.span>
+
+                <motion.h1
+                  initial={{ opacity: 0, y: 20 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  transition={{ delay: 0.25 }}
+                  className="font-heading text-3xl sm:text-4xl lg:text-5xl font-bold leading-tight mb-4 drop-shadow-sm"
+                >
+                  {slide.title}
+                </motion.h1>
+
+                <motion.p
+                  initial={{ opacity: 0, y: 20 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  transition={{ delay: 0.35 }}
+                  className="text-base sm:text-lg text-white/90 max-w-md mb-7 leading-relaxed"
+                >
+                  {slide.subtitle}
+                </motion.p>
+
+                <motion.div
+                  initial={{ opacity: 0, y: 20 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  transition={{ delay: 0.45 }}
+                  className="flex flex-col sm:flex-row items-center gap-3 sm:gap-4"
+                >
+                  <button
+                    onClick={handleCta}
+                    className={`group inline-flex items-center gap-2 bg-white ${slide.accent} font-bold px-7 py-3.5 rounded-full shadow-lg hover:shadow-xl hover:-translate-y-0.5 transition-all cursor-pointer`}
+                  >
+                    {slide.cta}
+                    <ArrowRight className="w-4 h-4 group-hover:translate-x-1 transition-transform" />
+                  </button>
+                  {slide.category && (
+                    <button
+                      onClick={() => onNavigate('catalog')}
+                      className="inline-flex items-center gap-1.5 text-white/90 font-medium text-sm hover:text-white transition-colors cursor-pointer"
+                    >
+                      Ver todo el catálogo
+                      <ArrowRight className="w-3.5 h-3.5" />
+                    </button>
+                  )}
+                </motion.div>
+
+                {/* Chips de confianza */}
+                <motion.div
+                  initial={{ opacity: 0 }}
+                  animate={{ opacity: 1 }}
+                  transition={{ delay: 0.6 }}
+                  className="flex flex-wrap items-center justify-center md:justify-start gap-x-5 gap-y-2 mt-7 text-xs sm:text-sm text-white/80"
+                >
+                  <span className="inline-flex items-center gap-1.5"><Sparkles className="w-4 h-4" /> 100% Artesanal</span>
+                  <span className="inline-flex items-center gap-1.5"><Star className="w-4 h-4" /> Personalizable</span>
+                  <span className="inline-flex items-center gap-1.5">🚚 Envíos en Bogotá</span>
+                </motion.div>
+              </div>
+
+              {/* Imagen */}
+              <div className="order-1 md:order-2 flex justify-center md:justify-end">
+                <motion.div
+                  initial={{ opacity: 0, scale: 0.9 }}
+                  animate={{ opacity: 1, scale: 1, y: [0, -12, 0] }}
+                  transition={{
+                    opacity: { duration: 0.5, delay: 0.2 },
+                    scale: { duration: 0.5, delay: 0.2 },
+                    y: { duration: 4, repeat: Infinity, ease: 'easeInOut' },
+                  }}
+                  className="relative w-52 h-52 sm:w-64 sm:h-64 lg:w-80 lg:h-80"
+                >
+                  <div className="absolute -inset-6 bg-white/25 rounded-full blur-3xl" />
+                  <div className="relative w-full h-full rounded-[2rem] bg-white/95 shadow-2xl ring-1 ring-white/50 overflow-hidden -rotate-2">
+                    <img
+                      src={slide.image}
+                      alt={slide.label}
+                      loading="eager"
+                      referrerPolicy="no-referrer"
+                      onError={(e) => { (e.target as HTMLImageElement).src = PLACEHOLDER_IMAGE; }}
+                      className="w-full h-full object-cover"
+                    />
+                  </div>
+                  <div className={`absolute -bottom-3 left-2 sm:-left-3 bg-white rounded-full pl-2 pr-4 py-1.5 shadow-lg flex items-center gap-1.5 ${slide.accent}`}>
+                    <span className="w-7 h-7 rounded-full bg-current/10 flex items-center justify-center">
+                      <Star className={`w-4 h-4 ${slide.accent} fill-current`} />
+                    </span>
+                    <span className="text-xs font-bold text-brand-dark">Hecho a mano</span>
+                  </div>
+                </motion.div>
+              </div>
+            </div>
+          </motion.div>
+        </AnimatePresence>
+
+        {/* Flechas */}
+        <button
+          onClick={prev}
+          aria-label="Anterior"
+          className="absolute left-3 sm:left-4 top-1/2 -translate-y-1/2 z-20 bg-white/25 backdrop-blur-sm hover:bg-white/45 p-2 sm:p-2.5 rounded-full transition-colors cursor-pointer"
         >
-          {/* Decoracion de fondo */}
-          <div className="absolute inset-0 opacity-10">
-            <div className="absolute top-4 left-8 text-6xl">{slide.emoji}</div>
-            <div className="absolute bottom-4 right-8 text-8xl">{slide.emoji}</div>
-            <div className="absolute top-1/2 left-1/4 text-4xl">{slide.emoji}</div>
-            <div className="absolute top-1/3 right-1/3 text-5xl">✨</div>
-          </div>
+          <ChevronLeft className="w-5 h-5 text-white" />
+        </button>
+        <button
+          onClick={next}
+          aria-label="Siguiente"
+          className="absolute right-3 sm:right-4 top-1/2 -translate-y-1/2 z-20 bg-white/25 backdrop-blur-sm hover:bg-white/45 p-2 sm:p-2.5 rounded-full transition-colors cursor-pointer"
+        >
+          <ChevronRight className="w-5 h-5 text-white" />
+        </button>
 
-          <div className="max-w-[800px] mx-auto text-center relative z-10">
+        {/* Dots */}
+        <div className="absolute bottom-5 left-1/2 -translate-x-1/2 z-20 flex gap-2">
+          {slides.map((s, i) => (
+            <button
+              key={s.key}
+              onClick={() => goTo(i, i > current ? 1 : -1)}
+              aria-label={`Ir a ${s.label}`}
+              className={`h-2.5 rounded-full transition-all cursor-pointer ${
+                i === current ? 'w-7 bg-white' : 'w-2.5 bg-white/50 hover:bg-white/70'
+              }`}
+            />
+          ))}
+        </div>
+
+        {/* Barra de progreso de autoplay */}
+        <div className="absolute bottom-0 left-0 right-0 h-1 bg-white/20 z-20">
+          {!paused && (
             <motion.div
-              initial={{ opacity: 0, y: 20 }}
-              animate={{ opacity: 1, y: 0 }}
-              transition={{ delay: 0.2 }}
-              className="inline-flex items-center gap-2 bg-white/20 backdrop-blur-sm px-5 py-2 rounded-full text-sm font-medium mb-8"
-            >
-              <Sparkles className="w-4 h-4" />
-              Hecho a mano con amor
-            </motion.div>
-
-            <motion.h1
-              initial={{ opacity: 0, y: 20 }}
-              animate={{ opacity: 1, y: 0 }}
-              transition={{ delay: 0.3 }}
-              className="text-3xl sm:text-5xl font-bold mb-6 leading-tight"
-            >
-              {slide.title}
-            </motion.h1>
-
-            <motion.p
-              initial={{ opacity: 0, y: 20 }}
-              animate={{ opacity: 1, y: 0 }}
-              transition={{ delay: 0.4 }}
-              className="text-lg sm:text-xl opacity-90 mb-10 max-w-[600px] mx-auto leading-relaxed"
-            >
-              {slide.subtitle}
-            </motion.p>
-
-            <motion.button
-              initial={{ opacity: 0, y: 20 }}
-              animate={{ opacity: 1, y: 0 }}
-              transition={{ delay: 0.5 }}
-              onClick={() => onNavigate('catalog')}
-              className="bg-white text-brand-pink font-bold px-8 py-3 rounded-full hover:bg-brand-amber hover:text-brand-dark transition-all shadow-lg hover:shadow-xl cursor-pointer"
-            >
-              {slide.cta}
-            </motion.button>
-          </div>
-        </motion.div>
-      </AnimatePresence>
-
-      {/* Flechas */}
-      <button
-        onClick={prev}
-        className="absolute left-3 top-1/2 -translate-y-1/2 bg-white/30 backdrop-blur-sm hover:bg-white/50 p-2 rounded-full transition-colors cursor-pointer"
-      >
-        <ChevronLeft className="w-5 h-5 text-white" />
-      </button>
-      <button
-        onClick={next}
-        className="absolute right-3 top-1/2 -translate-y-1/2 bg-white/30 backdrop-blur-sm hover:bg-white/50 p-2 rounded-full transition-colors cursor-pointer"
-      >
-        <ChevronRight className="w-5 h-5 text-white" />
-      </button>
-
-      {/* Dots */}
-      <div className="absolute bottom-4 left-1/2 -translate-x-1/2 flex gap-2">
-        {slides.map((_, i) => (
-          <button
-            key={i}
-            onClick={() => setCurrent(i)}
-            className={`w-2.5 h-2.5 rounded-full transition-all cursor-pointer ${
-              i === current ? 'bg-white w-6' : 'bg-white/50'
-            }`}
-          />
-        ))}
+              key={current}
+              className="h-full bg-white/80"
+              initial={{ width: '0%' }}
+              animate={{ width: '100%' }}
+              transition={{ duration: AUTOPLAY_MS / 1000, ease: 'linear' }}
+            />
+          )}
+        </div>
       </div>
-    </div>
     </div>
   );
 }

@@ -58,8 +58,8 @@ export default function Navbar({
               className="w-14 h-14 sm:w-16 sm:h-16 rounded-full object-contain group-hover:scale-110 transition-transform"
               referrerPolicy="no-referrer"
             />
-            <span className="font-heading text-2xl sm:text-3xl font-bold text-brand-dark">
-              Borboletas
+            <span className="font-heading text-lg sm:text-2xl font-bold text-brand-dark leading-tight text-left">
+              {COMPANY.name}
             </span>
           </button>
 

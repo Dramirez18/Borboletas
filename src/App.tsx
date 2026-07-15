@@ -352,7 +352,10 @@ export default function App() {
       {/* HOME */}
       {currentView === 'home' && (
         <>
-          <HeroCarousel onNavigate={navigateTo} />
+          <HeroCarousel
+            onNavigate={navigateTo}
+            onSelectCategory={(cat) => { handleCategoryFilter(cat); navigateTo('catalog'); }}
+          />
           <DiscountBanner />
 
           {/* Contador de visitas */}
@@ -753,7 +756,7 @@ export default function App() {
                         return s + p * i.quantity;
                       }, 0);
                       const itemList = cartItems.map(i => `• ${i.product.name} x${i.quantity}`).join('\n');
-                      const msg = `Hola Borboletas! 🦋\n\nQuiero pagar mi pedido #${lastOrderId} con *${method.name}*.\n\n${itemList}\n\n💰 Total: ${formatPrice(total)}\n📍 ${checkoutForm.address}\n📅 ${checkoutForm.date} ${checkoutForm.time}\n📞 ${checkoutForm.phone}\n\n¿Me pueden enviar los datos para completar el pago?`;
+                      const msg = `Hola Muñecos ConSentido! 💗\n\nQuiero pagar mi pedido #${lastOrderId} con *${method.name}*.\n\n${itemList}\n\n💰 Total: ${formatPrice(total)}\n📍 ${checkoutForm.address}\n📅 ${checkoutForm.date} ${checkoutForm.time}\n📞 ${checkoutForm.phone}\n\n¿Me pueden enviar los datos para completar el pago?`;
                       window.open(`https://wa.me/${COMPANY.whatsapp.replace(/[^0-9]/g, '')}?text=${encodeURIComponent(msg)}`, '_blank');
                       setSelectedPayment(method.id);
                       setCheckoutStep('completed');
@@ -806,7 +809,7 @@ export default function App() {
                     return s + p * i.quantity;
                   }, 0);
                   const itemList = cartItems.map(i => `• ${i.product.name} x${i.quantity}`).join('\n');
-                  const msg = `Hola Borboletas! 🦋\n\nComprobante de pago:\n📋 Pedido #${lastOrderId}\n${itemList}\n💰 Total: ${formatPrice(total)}\n💳 Método: ${selectedPayment}\n\n📍 ${checkoutForm.address}\n📅 ${checkoutForm.date} ${checkoutForm.time}\n📞 ${checkoutForm.phone}`;
+                  const msg = `Hola Muñecos ConSentido! 💗\n\nComprobante de pago:\n📋 Pedido #${lastOrderId}\n${itemList}\n💰 Total: ${formatPrice(total)}\n💳 Método: ${selectedPayment}\n\n📍 ${checkoutForm.address}\n📅 ${checkoutForm.date} ${checkoutForm.time}\n📞 ${checkoutForm.phone}`;
                   window.open(`https://wa.me/${COMPANY.whatsapp.replace(/[^0-9]/g, '')}?text=${encodeURIComponent(msg)}`, '_blank');
                   setCheckoutStep('completed');
                 }}
@@ -842,8 +845,8 @@ export default function App() {
                       }, 0);
                       const itemList = cartItems.map(i => `• ${i.product.name} x${i.quantity}`).join('\n');
                       const msg = selectedPayment === 'bold'
-                        ? `Hola Borboletas! 🦋 Quiero pagar mi pedido #${lastOrderId} por ${formatPrice(total)} con datáfono/Bold. ¿Me pueden enviar el link de pago?`
-                        : `Hola Borboletas! 🦋\n\nComprobante de pago:\n📋 Pedido #${lastOrderId}\n${itemList}\n💰 Total: ${formatPrice(total)}\n💳 Método: ${selectedPayment}\n\n📍 ${checkoutForm.address}\n📅 ${checkoutForm.date} ${checkoutForm.time}\n📞 ${checkoutForm.phone}`;
+                        ? `Hola Muñecos ConSentido! 💗 Quiero pagar mi pedido #${lastOrderId} por ${formatPrice(total)} con datáfono/Bold. ¿Me pueden enviar el link de pago?`
+                        : `Hola Muñecos ConSentido! 💗\n\nComprobante de pago:\n📋 Pedido #${lastOrderId}\n${itemList}\n💰 Total: ${formatPrice(total)}\n💳 Método: ${selectedPayment}\n\n📍 ${checkoutForm.address}\n📅 ${checkoutForm.date} ${checkoutForm.time}\n📞 ${checkoutForm.phone}`;
                       window.open(`https://wa.me/${COMPANY.whatsapp.replace(/[^0-9]/g, '')}?text=${encodeURIComponent(msg)}`, '_blank');
                     }}
                     className="w-full bg-white border-2 border-emerald-500 text-emerald-600 py-3 rounded-xl font-semibold hover:bg-emerald-50 transition-all cursor-pointer flex items-center justify-center gap-2"

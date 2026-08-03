@@ -1290,7 +1290,7 @@ function ProductFormFields({
       <div className="sm:col-span-2">
         <label className="text-[10px] font-semibold text-slate-500 uppercase tracking-wider block mb-1">URL de imagen *</label>
         <input type="url" value={imageUrl} onChange={e => onChange({ ...form, images: [e.target.value] })}
-          placeholder="https://i.postimg.cc/..."
+          placeholder="https://ythsgjjawqzvhewenqex.supabase.co/storage/v1/object/public/productos/....webp"
           className="w-full px-4 py-2.5 rounded-xl border border-slate-200 text-sm font-mono focus:outline-none focus:ring-2 focus:ring-amber-400/50" />
         {imageUrl && (
           <img src={imageUrl} alt="Preview" className="w-20 h-20 rounded-xl object-cover mt-2 border border-slate-200" referrerPolicy="no-referrer"

@@ -14,8 +14,15 @@ export default function Footer() {
               <img
                 src={COMPANY.logo}
                 alt={COMPANY.name}
+                width={56}
+                height={56}
+                decoding="async"
                 className="w-14 h-14 rounded-full object-contain bg-white/10 p-1"
                 referrerPolicy="no-referrer"
+                onError={(e) => {
+                  const t = e.currentTarget;
+                  if (!t.src.endsWith('/favicon.svg')) t.src = '/favicon.svg';
+                }}
               />
               <div>
                 <span className="font-heading text-xl font-bold block">{COMPANY.name}</span>

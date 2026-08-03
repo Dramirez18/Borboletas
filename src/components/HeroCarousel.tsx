@@ -4,7 +4,7 @@ import { ChevronLeft, ChevronRight, Sparkles, Star, ArrowRight } from 'lucide-re
 import type { ProductCategory } from '../types';
 import { PLACEHOLDER_IMAGE } from '../constants';
 
-const IMG = 'https://i.postimg.cc';
+const IMG = 'https://ythsgjjawqzvhewenqex.supabase.co/storage/v1/object/public/productos';
 
 interface Slide {
   key: string;
@@ -28,7 +28,7 @@ const slides: Slide[] = [
     cta: 'Ver Catálogo',
     gradient: 'from-brand-pink via-brand-purple to-brand-pink-dark',
     emoji: '💗',
-    image: `${IMG}/Y2ncqrG4/familia-1.png`,
+    image: `${IMG}/Y2ncqrG4.webp`,
     category: null,
     accent: 'text-brand-pink',
   },
@@ -40,7 +40,7 @@ const slides: Slide[] = [
     cta: 'Ver Navidad',
     gradient: 'from-red-700 via-red-600 to-green-700',
     emoji: '🎄',
-    image: `${IMG}/XJLR53sP/papas-noe-pareja-2.png`,
+    image: `${IMG}/XJLR53sP.webp`,
     category: 'navidad',
     accent: 'text-red-600',
   },
@@ -52,7 +52,7 @@ const slides: Slide[] = [
     cta: 'Ver Halloween',
     gradient: 'from-orange-600 via-orange-500 to-purple-800',
     emoji: '🎃',
-    image: `${IMG}/rmjB4cf1/bruja-1.png`,
+    image: `${IMG}/rmjB4cf1.webp`,
     category: 'halloween',
     accent: 'text-orange-600',
   },
@@ -64,7 +64,7 @@ const slides: Slide[] = [
     cta: 'Ver Detalles',
     gradient: 'from-pink-500 via-rose-400 to-amber-400',
     emoji: '🎁',
-    image: `${IMG}/wMBScPPp/fommy-2.png`,
+    image: `${IMG}/wMBScPPp.webp`,
     category: 'desayunos_sorpresa',
     accent: 'text-pink-600',
   },
@@ -76,7 +76,7 @@ const slides: Slide[] = [
     cta: 'Ver Colección',
     gradient: 'from-blue-500 via-cyan-400 to-teal-500',
     emoji: '✏️',
-    image: `${IMG}/B6JWttBX/cuaderno-1.png`,
+    image: `${IMG}/B6JWttBX.webp`,
     category: 'lapices_cuadernos',
     accent: 'text-blue-600',
   },
@@ -88,7 +88,7 @@ const slides: Slide[] = [
     cta: 'Ver Tejidos',
     gradient: 'from-rose-400 via-fuchsia-400 to-violet-500',
     emoji: '🧶',
-    image: `${IMG}/tRS0CqZJ/tejido-1.png`,
+    image: `${IMG}/tRS0CqZJ.webp`,
     category: 'tejidos',
     accent: 'text-fuchsia-600',
   },
@@ -235,20 +235,21 @@ export default function HeroCarousel({ onNavigate, onSelectCategory }: HeroCarou
                     scale: { duration: 0.5, delay: 0.2 },
                     y: { duration: 4, repeat: Infinity, ease: 'easeInOut' },
                   }}
-                  className="relative w-52 h-52 sm:w-64 sm:h-64 lg:w-80 lg:h-80"
+                  className="relative w-60 h-60 sm:w-72 sm:h-72 lg:w-[22rem] lg:h-[22rem]"
                 >
-                  <div className="absolute -inset-6 bg-white/25 rounded-full blur-3xl" />
-                  <div className="relative w-full h-full rounded-[2rem] bg-white/95 shadow-2xl ring-1 ring-white/50 overflow-hidden -rotate-2">
-                    <img
-                      src={slide.image}
-                      alt={slide.label}
-                      loading="eager"
-                      referrerPolicy="no-referrer"
-                      onError={(e) => { (e.target as HTMLImageElement).src = PLACEHOLDER_IMAGE; }}
-                      className="w-full h-full object-cover"
-                    />
-                  </div>
-                  <div className={`absolute -bottom-3 left-2 sm:-left-3 bg-white rounded-full pl-2 pr-4 py-1.5 shadow-lg flex items-center gap-1.5 ${slide.accent}`}>
+                  {/* Halo suave: aporta brillo y separa la figura del gradiente, sin recuadro blanco */}
+                  <div className="absolute inset-0 bg-white/20 rounded-full blur-3xl scale-95" />
+                  {/* Imagen recortada (PNG transparente) flotando sobre el gradiente del propio slide */}
+                  <img
+                    src={slide.image}
+                    alt={slide.label}
+                    loading="eager"
+                    decoding="async"
+                    referrerPolicy="no-referrer"
+                    onError={(e) => { (e.target as HTMLImageElement).src = PLACEHOLDER_IMAGE; }}
+                    className="relative w-full h-full object-contain drop-shadow-[0_18px_28px_rgba(0,0,0,0.38)]"
+                  />
+                  <div className={`absolute -bottom-1 left-1 sm:-left-2 bg-white rounded-full pl-2 pr-4 py-1.5 shadow-lg flex items-center gap-1.5 ${slide.accent}`}>
                     <span className="w-7 h-7 rounded-full bg-current/10 flex items-center justify-center">
                       <Star className={`w-4 h-4 ${slide.accent} fill-current`} />
                     </span>

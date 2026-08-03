@@ -12,6 +12,9 @@ dist
 dist-ssr
 *.local
 
+# Imagenes WebP generadas localmente antes de subir a Supabase Storage (temporal)
+scripts/optimized/
+
 # Editor directories and files
 .vscode/*
 !.vscode/extensions.json

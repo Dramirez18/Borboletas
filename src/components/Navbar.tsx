@@ -55,8 +55,15 @@ export default function Navbar({
             <img
               src={COMPANY.logo}
               alt={COMPANY.name}
+              width={64}
+              height={64}
+              decoding="async"
               className="w-14 h-14 sm:w-16 sm:h-16 rounded-full object-contain group-hover:scale-110 transition-transform"
               referrerPolicy="no-referrer"
+              onError={(e) => {
+                const t = e.currentTarget;
+                if (!t.src.endsWith('/favicon.svg')) t.src = '/favicon.svg';
+              }}
             />
             <span className="font-heading text-lg sm:text-2xl font-bold text-brand-dark leading-tight text-left">
               {COMPANY.name}

@@ -174,7 +174,7 @@ export default function HeroCarousel({ onNavigate, onSelectCategory }: HeroCarou
                   initial={{ opacity: 0, y: 20 }}
                   animate={{ opacity: 1, y: 0 }}
                   transition={{ delay: 0.25 }}
-                  className="font-heading text-3xl sm:text-4xl lg:text-5xl font-bold leading-tight mb-4 drop-shadow-sm"
+                  className="font-heading text-[1.6rem] sm:text-4xl lg:text-5xl font-bold leading-tight mb-4 drop-shadow-sm text-balance break-words"
                 >
                   {slide.title}
                 </motion.h1>
@@ -235,7 +235,7 @@ export default function HeroCarousel({ onNavigate, onSelectCategory }: HeroCarou
                     scale: { duration: 0.5, delay: 0.2 },
                     y: { duration: 4, repeat: Infinity, ease: 'easeInOut' },
                   }}
-                  className="relative w-60 h-60 sm:w-72 sm:h-72 lg:w-[22rem] lg:h-[22rem]"
+                  className="relative w-72 h-64 sm:w-72 sm:h-72 lg:w-[22rem] lg:h-[22rem]"
                 >
                   {/* Halo suave: aporta brillo y separa la figura del gradiente, sin recuadro blanco */}
                   <div className="absolute inset-0 bg-white/20 rounded-full blur-3xl scale-95" />
@@ -265,14 +265,14 @@ export default function HeroCarousel({ onNavigate, onSelectCategory }: HeroCarou
         <button
           onClick={prev}
           aria-label="Anterior"
-          className="absolute left-3 sm:left-4 top-1/2 -translate-y-1/2 z-20 bg-white/25 backdrop-blur-sm hover:bg-white/45 p-2 sm:p-2.5 rounded-full transition-colors cursor-pointer"
+          className="hidden sm:block absolute left-3 sm:left-4 top-1/2 -translate-y-1/2 z-20 bg-white/25 backdrop-blur-sm hover:bg-white/45 p-2 sm:p-2.5 rounded-full transition-colors cursor-pointer"
         >
           <ChevronLeft className="w-5 h-5 text-white" />
         </button>
         <button
           onClick={next}
           aria-label="Siguiente"
-          className="absolute right-3 sm:right-4 top-1/2 -translate-y-1/2 z-20 bg-white/25 backdrop-blur-sm hover:bg-white/45 p-2 sm:p-2.5 rounded-full transition-colors cursor-pointer"
+          className="hidden sm:block absolute right-3 sm:right-4 top-1/2 -translate-y-1/2 z-20 bg-white/25 backdrop-blur-sm hover:bg-white/45 p-2 sm:p-2.5 rounded-full transition-colors cursor-pointer"
         >
           <ChevronRight className="w-5 h-5 text-white" />
         </button>

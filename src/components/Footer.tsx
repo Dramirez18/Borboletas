@@ -17,7 +17,7 @@ export default function Footer() {
                 width={56}
                 height={56}
                 decoding="async"
-                className="w-14 h-14 rounded-full object-contain bg-white/10 p-1"
+                className="w-14 h-14 object-contain shrink-0"
                 referrerPolicy="no-referrer"
                 onError={(e) => {
                   const t = e.currentTarget;

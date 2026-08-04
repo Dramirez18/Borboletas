@@ -25,3 +25,7 @@ scripts/optimized/
 *.njsproj
 *.sln
 *.sw?
+
+# Assets fuente del logo (los derivados se suben a Supabase Storage)
+Logo-completo.png
+_preview-*.png

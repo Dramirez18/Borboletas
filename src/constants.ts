@@ -13,10 +13,12 @@ export const COMPANY = {
   whatsapp2: '+57 316 477 6353',
   whatsappMessage: 'Hola Muñecos ConSentido! 💗 Me interesa un producto',
   city: 'Bogota, Colombia',
-  // TODO: reemplazar por el logo real subido a Supabase Storage.
-  // La URL anterior de postimg.cc devolvia 403 (imagen borrada) y dejaba el logo vacio.
-  // Se usa el corazon de marca local mientras tanto (carga instantanea, nunca falla).
-  logo: '/favicon.svg',
+  // Logo de marca en Supabase Storage:
+  //  - logo: solo el corazon-icono con fondo transparente (navbar, se ve legible en pequeño)
+  //  - logoFull: logo completo con las muñecas y el texto (footer / compartir / carga)
+  // onError en Navbar/Footer cae a /favicon.svg si por algo no cargara.
+  logo: 'https://ythsgjjawqzvhewenqex.supabase.co/storage/v1/object/public/productos/brand/logo-icon.webp',
+  logoFull: 'https://ythsgjjawqzvhewenqex.supabase.co/storage/v1/object/public/productos/brand/logo-full.webp',
 };
 
 export const CATEGORIES: CategoryInfo[] = [

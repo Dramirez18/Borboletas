@@ -58,7 +58,7 @@ export default function Navbar({
               width={64}
               height={64}
               decoding="async"
-              className="w-14 h-14 sm:w-16 sm:h-16 rounded-full object-contain group-hover:scale-110 transition-transform"
+              className="w-14 h-14 sm:w-16 sm:h-16 object-contain shrink-0 group-hover:scale-110 transition-transform"
               referrerPolicy="no-referrer"
               onError={(e) => {
                 const t = e.currentTarget;

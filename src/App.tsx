@@ -1,7 +1,7 @@
 import { useState, useCallback, useEffect } from 'react';
-import type { Product, CartItem, User } from './types';
+import type { Product, CartItem, User, CategoryInfo, SubcategoryInfo } from './types';
 import type { ProductCategory, NavidadSubcategory } from './types';
-import { SAMPLE_PRODUCTS, CATEGORIES, NAVIDAD_SUBCATEGORIES, COMPANY, formatPrice, getDiscountedPrice } from './constants';
+import { SAMPLE_PRODUCTS, CATEGORIES, NAVIDAD_SUBCATEGORIES, COMPANY, formatPrice, getDiscountedPrice, categoryGradient, categoryAccent } from './constants';
 import { supabase } from './lib/supabase';
 import { Users, ArrowLeft, CheckCircle2, Clock, MapPin, Phone as PhoneIcon, Calendar, CreditCard, MessageCircle } from 'lucide-react';
 import Navbar from './components/Navbar';
@@ -48,6 +48,8 @@ export default function App() {
 
   // Supabase state
   const [products, setProducts] = useState<Product[]>(SAMPLE_PRODUCTS);
+  const [categories, setCategories] = useState<CategoryInfo[]>(CATEGORIES);
+  const [subcategories, setSubcategories] = useState<SubcategoryInfo[]>(NAVIDAD_SUBCATEGORIES);
   const [isLoading, setIsLoading] = useState(true);
   // Admin se determina por el rol del usuario logueado
   const isAdmin = user?.role === 'admin';
@@ -157,6 +159,37 @@ export default function App() {
     loadProducts();
   }, []);
 
+  // Cargar categorías/subcategorías desde Supabase con fallback a constants
+  const loadCategories = useCallback(async () => {
+    if (!supabase) {
+      setCategories(CATEGORIES);
+      setSubcategories(NAVIDAD_SUBCATEGORIES);
+      return;
+    }
+    try {
+      const { data, error } = await supabase.from('Category').select('*').order('sortOrder');
+      if (error || !data || data.length === 0) {
+        if (error) console.error('[Supabase] Error al cargar categorías:', error.message);
+        setCategories(CATEGORIES);
+        setSubcategories(NAVIDAD_SUBCATEGORIES);
+        return;
+      }
+      const rows = data as (CategoryInfo & { parentKey: string | null })[];
+      setCategories(rows.filter((c) => !c.parentKey));
+      setSubcategories(
+        rows
+          .filter((c) => c.parentKey)
+          .map((c) => ({ key: c.key, label: c.label, emoji: c.emoji, parentKey: c.parentKey as string, sortOrder: c.sortOrder }))
+      );
+    } catch (err) {
+      console.error('[Supabase] Error de conexión (categorías):', err);
+      setCategories(CATEGORIES);
+      setSubcategories(NAVIDAD_SUBCATEGORIES);
+    }
+  }, []);
+
+  useEffect(() => { loadCategories(); }, [loadCategories]);
+
   // CRUD handlers para admin
   const handleUpdateProduct = useCallback(async (id: string, updates: Partial<Product>): Promise<boolean> => {
     if (supabase) {
@@ -243,6 +276,45 @@ export default function App() {
     return true;
   }, []);
 
+  // CRUD handlers de categorías (admin)
+  const handleCreateCategory = useCallback(async (cat: CategoryInfo): Promise<boolean> => {
+    if (!supabase) { alert('No hay conexión con Supabase'); return false; }
+    const { error } = await supabase.from('Category').insert({
+      key: cat.key, label: cat.label, emoji: cat.emoji, description: cat.description || '',
+      color1: cat.color1, color2: cat.color2, parentKey: cat.parentKey ?? null,
+      sortOrder: cat.sortOrder ?? 0, active: cat.active ?? true,
+      createdAt: new Date().toISOString(), updatedAt: new Date().toISOString(),
+    });
+    if (error) { alert(`Error al crear categoría: ${error.message}`); return false; }
+    await loadCategories();
+    return true;
+  }, [loadCategories]);
+
+  const handleUpdateCategory = useCallback(async (key: string, updates: Partial<CategoryInfo>): Promise<boolean> => {
+    if (!supabase) { alert('No hay conexión con Supabase'); return false; }
+    const { error } = await supabase.from('Category').update({ ...updates, updatedAt: new Date().toISOString() }).eq('key', key);
+    if (error) { alert(`Error al actualizar categoría: ${error.message}`); return false; }
+    await loadCategories();
+    return true;
+  }, [loadCategories]);
+
+  const handleDeleteCategory = useCallback(async (key: string): Promise<boolean> => {
+    if (!supabase) { alert('No hay conexión con Supabase'); return false; }
+    const productsUsing = products.filter((p) => p.category === key || p.subcategory === key).length;
+    const subsUsing = subcategories.filter((s) => s.parentKey === key).length;
+    if (productsUsing > 0 || subsUsing > 0) {
+      const parts: string[] = [];
+      if (productsUsing > 0) parts.push(`${productsUsing} producto(s)`);
+      if (subsUsing > 0) parts.push(`${subsUsing} subcategoría(s)`);
+      alert(`No se puede borrar: ${parts.join(' y ')} usan esta categoría.\nReasígnalos o desactívalos primero.`);
+      return false;
+    }
+    const { error } = await supabase.from('Category').delete().eq('key', key);
+    if (error) { alert(`Error al borrar categoría: ${error.message}`); return false; }
+    await loadCategories();
+    return true;
+  }, [loadCategories, products, subcategories]);
+
   // Cart actions
   const addToCart = useCallback((product: Product) => {
     setCartItems((prev) => {
@@ -302,7 +374,7 @@ export default function App() {
     if (activeCategory) {
       filtered = filtered.filter((p) => p.category === activeCategory);
 
-      if (activeCategory === 'navidad' && activeSubcategory) {
+      if (activeSubcategory) {
         filtered = filtered.filter((p) => p.subcategory === activeSubcategory);
       }
     }
@@ -323,6 +395,10 @@ export default function App() {
   const discountedProducts = products.filter(
     (p) => p.active && p.discountPercent > 0
   );
+
+  // Categoría activa (para colores temáticos) y sus subcategorías
+  const activeCat = categories.find((c) => c.key === activeCategory) || null;
+  const activeSubs = activeCategory ? subcategories.filter((s) => s.parentKey === activeCategory) : [];
 
   // Loading state
   if (isLoading) {
@@ -405,7 +481,7 @@ export default function App() {
           )}
 
           {/* Secciones por categoria */}
-          {CATEGORIES.map((cat) => {
+          {categories.filter((c) => c.active !== false).map((cat) => {
             const catProducts = getProductsByCategory(cat.key);
             if (catProducts.length === 0) return null;
             return (
@@ -434,7 +510,7 @@ export default function App() {
               {searchQuery
                 ? `Resultados: "${searchQuery}"`
                 : activeCategory
-                  ? CATEGORIES.find(c => c.key === activeCategory)?.label || 'Catálogo'
+                  ? categories.find(c => c.key === activeCategory)?.label || 'Catálogo'
                   : 'Catálogo'}
             </h1>
             {(searchQuery || activeCategory) && (
@@ -462,13 +538,14 @@ export default function App() {
             >
               Todos
             </button>
-            {CATEGORIES.map((cat) => (
+            {categories.filter((c) => c.active !== false).map((cat) => (
               <button
                 key={cat.key}
                 onClick={() => handleCategoryFilter(cat.key)}
+                style={activeCategory === cat.key ? { backgroundImage: categoryGradient(cat) } : undefined}
                 className={`px-5 py-2.5 rounded-full text-sm font-semibold whitespace-nowrap transition-all cursor-pointer ${
                   activeCategory === cat.key
-                    ? 'bg-brand-pink text-white shadow-md'
+                    ? 'text-white shadow-md'
                     : 'bg-white text-brand-dark hover:bg-brand-pink-light/30 border border-gray-200'
                 }`}
               >
@@ -477,31 +554,36 @@ export default function App() {
             ))}
           </div>
 
-          {/* Subcategorias de Navidad */}
-          {activeCategory === 'navidad' && (
-            <div className="bg-gradient-to-r from-red-50 to-green-50 border border-red-100 rounded-2xl p-4 mb-8">
+          {/* Subcategorias de la categoria activa (si tiene) */}
+          {activeCat && activeSubs.length > 0 && (
+            <div
+              className="border rounded-2xl p-4 mb-8"
+              style={{ borderColor: `${categoryAccent(activeCat)}33`, backgroundColor: `${categoryAccent(activeCat)}0d` }}
+            >
               <p className="text-xs font-semibold text-brand-gray uppercase tracking-wider mb-3 px-1">
                 Filtrar por tipo
               </p>
               <div className="flex gap-2 overflow-x-auto hide-scrollbar">
                 <button
                   onClick={() => setActiveSubcategory(null)}
+                  style={!activeSubcategory ? { backgroundImage: categoryGradient(activeCat) } : undefined}
                   className={`px-4 py-2 rounded-full text-sm font-medium whitespace-nowrap transition-all cursor-pointer ${
                     !activeSubcategory
-                      ? 'bg-red-600 text-white shadow-md'
-                      : 'bg-white text-brand-dark hover:bg-red-50 border border-red-200'
+                      ? 'text-white shadow-md'
+                      : 'bg-white text-brand-dark hover:bg-gray-50 border border-gray-200'
                   }`}
                 >
-                  🎄 Todos
+                  {activeCat.emoji} Todos
                 </button>
-                {NAVIDAD_SUBCATEGORIES.map((sub) => (
+                {activeSubs.map((sub) => (
                   <button
                     key={sub.key}
                     onClick={() => setActiveSubcategory(sub.key)}
+                    style={activeSubcategory === sub.key ? { backgroundImage: categoryGradient(activeCat) } : undefined}
                     className={`px-4 py-2 rounded-full text-sm font-medium whitespace-nowrap transition-all cursor-pointer ${
                       activeSubcategory === sub.key
-                        ? 'bg-red-600 text-white shadow-md'
-                        : 'bg-white text-brand-dark hover:bg-red-50 border border-red-200'
+                        ? 'text-white shadow-md'
+                        : 'bg-white text-brand-dark hover:bg-gray-50 border border-gray-200'
                     }`}
                   >
                     {sub.emoji} {sub.label}
@@ -881,10 +963,15 @@ export default function App() {
       {currentView === 'admin' && isAdmin && (
         <AdminPanel
           products={products}
+          categories={categories}
+          subcategories={subcategories}
           onUpdateProduct={handleUpdateProduct}
           onToggleActive={handleToggleActive}
           onDeleteProduct={handleDeleteProduct}
           onCreateProduct={handleCreateProduct}
+          onCreateCategory={handleCreateCategory}
+          onUpdateCategory={handleUpdateCategory}
+          onDeleteCategory={handleDeleteCategory}
           onBack={() => navigateTo('home')}
         />
       )}

@@ -21,56 +21,101 @@ export const COMPANY = {
   logoFull: 'https://ythsgjjawqzvhewenqex.supabase.co/storage/v1/object/public/productos/brand/logo-full.webp',
 };
 
+// Categorías base (fallback si Supabase no responde). En producción se cargan
+// desde la tabla Category y se gestionan desde el Admin Panel.
+// color1/color2 son hex (inicio/fin del gradiente temático).
 export const CATEGORIES: CategoryInfo[] = [
   {
     key: 'navidad',
     label: 'Época de Navidad',
     emoji: '🎄',
     description: 'Decoración navideña artesanal para llenar tu hogar de magia y espíritu navideño',
-    gradient: 'from-red-700 via-red-600 to-green-700',
-    accentColor: 'text-red-600',
+    color1: '#b91c1c',
+    color2: '#15803d',
+    parentKey: null,
+    sortOrder: 1,
+    active: true,
   },
   {
     key: 'halloween',
     label: 'Época de Halloween',
     emoji: '🎃',
     description: 'Figuras terroríficamente adorables para la noche más divertida del año',
-    gradient: 'from-orange-600 via-orange-500 to-purple-800',
-    accentColor: 'text-orange-600',
+    color1: '#ea580c',
+    color2: '#6b21a8',
+    parentKey: null,
+    sortOrder: 2,
+    active: true,
   },
   {
     key: 'desayunos_sorpresa',
     label: 'Decoración Desayunos Sorpresa',
     emoji: '🎁',
     description: 'Detalles artesanales para sorprender con un desayuno inolvidable',
-    gradient: 'from-pink-500 via-rose-400 to-amber-400',
-    accentColor: 'text-pink-500',
+    color1: '#ec4899',
+    color2: '#fbbf24',
+    parentKey: null,
+    sortOrder: 3,
+    active: true,
   },
   {
     key: 'lapices_cuadernos',
     label: 'Punteros y Agendas',
     emoji: '✏️',
     description: 'Útiles escolares decorados a mano con personajes únicos y coloridos',
-    gradient: 'from-blue-500 via-cyan-400 to-teal-500',
-    accentColor: 'text-blue-600',
+    color1: '#3b82f6',
+    color2: '#14b8a6',
+    parentKey: null,
+    sortOrder: 4,
+    active: true,
   },
   {
     key: 'tejidos',
     label: 'Tejidos',
     emoji: '🧶',
     description: 'Piezas tejidas a mano con lana de alta calidad, cada puntada hecha con amor',
-    gradient: 'from-rose-400 via-fuchsia-400 to-violet-500',
-    accentColor: 'text-fuchsia-600',
+    color1: '#fb7185',
+    color2: '#8b5cf6',
+    parentKey: null,
+    sortOrder: 5,
+    active: true,
   },
 ];
 
 export const NAVIDAD_SUBCATEGORIES: SubcategoryInfo[] = [
-  { key: 'noel', label: 'Papá y Mamá Noel', emoji: '🎅' },
-  { key: 'renos', label: 'Renos y Renas', emoji: '🦌' },
-  { key: 'osos_polares', label: 'Osos Polares', emoji: '🐻‍❄️' },
-  { key: 'munecos_nieve', label: 'Muñecos de Nieve', emoji: '⛄' },
-  { key: 'pie_arbol_cojines', label: 'Pie de Árbol y Cojines', emoji: '🎁' },
+  { key: 'noel', label: 'Papá y Mamá Noel', emoji: '🎅', parentKey: 'navidad', sortOrder: 1 },
+  { key: 'renos', label: 'Renos y Renas', emoji: '🦌', parentKey: 'navidad', sortOrder: 2 },
+  { key: 'osos_polares', label: 'Osos Polares', emoji: '🐻‍❄️', parentKey: 'navidad', sortOrder: 3 },
+  { key: 'munecos_nieve', label: 'Muñecos de Nieve', emoji: '⛄', parentKey: 'navidad', sortOrder: 4 },
+  { key: 'pie_arbol_cojines', label: 'Pie de Árbol y Cojines', emoji: '🎁', parentKey: 'navidad', sortOrder: 5 },
 ];
+
+// ─── Helpers de categorías dinámicas ───
+
+/** Gradiente temático inline a partir de los 2 colores hex de la categoría. */
+export function categoryGradient(c: { color1?: string; color2?: string }): string {
+  const a = c.color1 || '#E91E63';
+  const b = c.color2 || '#9C27B0';
+  return `linear-gradient(135deg, ${a}, ${b})`;
+}
+
+/** Color de acento (textos/bordes sobre fondo claro). */
+export function categoryAccent(c: { color1?: string }): string {
+  return c.color1 || '#E91E63';
+}
+
+/** Genera una key slug sin tildes ni espacios desde un label (los keys van sin acentos). */
+export function slugify(label: string): string {
+  return (
+    label
+      .normalize('NFD')
+      .replace(/[̀-ͯ]/g, '') // quitar acentos (marcas diacríticas)
+      .toLowerCase()
+      .replace(/[^a-z0-9]+/g, '_') // no alfanumérico -> _
+      .replace(/^_+|_+$/g, '') // trim de _
+      .slice(0, 40) || 'categoria'
+  );
+}
 
 // ============================
 // PRODUCTOS CON IMAGENES REALES

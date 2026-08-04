@@ -1,7 +1,7 @@
 import { useState, useMemo } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
-import type { Product, ProductCategory, NavidadSubcategory, BugReport, BugStatus, BugPriority, ClientRow, OrderRow, OrderItemRow } from '../types';
-import { CATEGORIES, NAVIDAD_SUBCATEGORIES, formatPrice } from '../constants';
+import type { Product, ProductCategory, NavidadSubcategory, CategoryInfo, SubcategoryInfo, BugReport, BugStatus, BugPriority, ClientRow, OrderRow, OrderItemRow } from '../types';
+import { formatPrice, categoryGradient, slugify } from '../constants';
 import { supabase } from '../lib/supabase';
 import {
   MIGRATIONS,
@@ -15,19 +15,24 @@ import {
   ArrowLeft, Plus, Pencil, Trash2, Eye, EyeOff, Save, X, Database,
   BarChart3, Package, Search, ChevronUp, ChevronDown, ChevronRight,
   CheckCircle2, Clock, Copy, Check, AlertTriangle, DollarSign, Bug,
-  Users, ShoppingBag, RefreshCw, Edit3,
+  Users, ShoppingBag, RefreshCw, Edit3, Tag,
 } from 'lucide-react';
 
 interface AdminPanelProps {
   products: Product[];
+  categories: CategoryInfo[];
+  subcategories: SubcategoryInfo[];
   onUpdateProduct: (id: string, updates: Partial<Product>) => Promise<boolean>;
   onToggleActive: (id: string) => void;
   onDeleteProduct: (id: string) => void;
   onCreateProduct: (product: Product) => Promise<boolean>;
+  onCreateCategory: (cat: CategoryInfo) => Promise<boolean>;
+  onUpdateCategory: (key: string, updates: Partial<CategoryInfo>) => Promise<boolean>;
+  onDeleteCategory: (key: string) => Promise<boolean>;
   onBack: () => void;
 }
 
-type AdminTab = 'dashboard' | 'products' | 'clients' | 'orders' | 'bugs' | 'sqlhistory';
+type AdminTab = 'dashboard' | 'products' | 'categories' | 'clients' | 'orders' | 'bugs' | 'sqlhistory';
 type SortField = 'name' | 'price' | 'category' | 'discountPercent';
 type SortDir = 'asc' | 'desc';
 
@@ -52,10 +57,15 @@ function isAdminSessionValid(): boolean {
 
 export default function AdminPanel({
   products,
+  categories,
+  subcategories,
   onUpdateProduct,
   onToggleActive,
   onDeleteProduct,
   onCreateProduct,
+  onCreateCategory,
+  onUpdateCategory,
+  onDeleteCategory,
   onBack,
 }: AdminPanelProps) {
   // Auth
@@ -84,6 +94,16 @@ export default function AdminPanel({
   });
   const [saving, setSaving] = useState(false);
   const [saveMsg, setSaveMsg] = useState<{ type: 'ok' | 'err'; text: string } | null>(null);
+
+  // Categorías tab state
+  const emptyCategoryForm: Partial<CategoryInfo> = {
+    label: '', emoji: '', description: '', color1: '#E91E63', color2: '#9C27B0',
+    parentKey: null, sortOrder: 0, active: true,
+  };
+  const [showCategoryModal, setShowCategoryModal] = useState(false);
+  const [editingCategoryKey, setEditingCategoryKey] = useState<string | null>(null);
+  const [categoryForm, setCategoryForm] = useState<Partial<CategoryInfo>>(emptyCategoryForm);
+  const [savingCategory, setSavingCategory] = useState(false);
 
   // SQL History
   const [expandedMigration, setExpandedMigration] = useState<string | null>(null);
@@ -121,13 +141,13 @@ export default function AdminPanel({
     const withDiscount = products.filter(p => p.discountPercent > 0).length;
     const featured = products.filter(p => p.featured).length;
     const customizable = products.filter(p => p.customizable).length;
-    const byCategory = CATEGORIES.map(cat => ({
+    const byCategory = categories.map(cat => ({
       ...cat,
       count: products.filter(p => p.category === cat.key).length,
       active: products.filter(p => p.category === cat.key && p.active).length,
     }));
     return { total, active, inactive, withDiscount, featured, customizable, byCategory };
-  }, [products]);
+  }, [products, categories]);
 
   // ========== PRODUCT FILTERING & SORTING (must be before early return) ==========
   const filteredProducts = useMemo(() => {
@@ -444,10 +464,67 @@ export default function AdminPanel({
     );
   }
 
+  // ========== CATEGORÍAS: handlers ==========
+  const openCreateCategory = (parentKey: string | null = null) => {
+    setEditingCategoryKey(null);
+    setCategoryForm({ ...emptyCategoryForm, parentKey });
+    setShowCategoryModal(true);
+  };
+  const openEditCategory = (cat: CategoryInfo | SubcategoryInfo) => {
+    setEditingCategoryKey(cat.key);
+    const full = categories.find(c => c.key === cat.key);
+    if (full) {
+      setCategoryForm({ ...full });
+    } else {
+      const sub = cat as SubcategoryInfo;
+      setCategoryForm({
+        label: sub.label, emoji: sub.emoji, description: '',
+        color1: '#E91E63', color2: '#9C27B0',
+        parentKey: sub.parentKey, sortOrder: sub.sortOrder ?? 0, active: true,
+      });
+    }
+    setShowCategoryModal(true);
+  };
+  const handleSaveCategory = async () => {
+    const label = (categoryForm.label || '').trim();
+    if (!label) { alert('El nombre es obligatorio'); return; }
+    setSavingCategory(true);
+    const parentKey = categoryForm.parentKey || null;
+    const parent = parentKey ? categories.find(c => c.key === parentKey) : null; // subcat hereda color del padre
+    const payload: CategoryInfo = {
+      key: editingCategoryKey || slugify(label),
+      label,
+      emoji: categoryForm.emoji || '',
+      description: categoryForm.description || '',
+      color1: parent ? parent.color1 : (categoryForm.color1 || '#E91E63'),
+      color2: parent ? parent.color2 : (categoryForm.color2 || '#9C27B0'),
+      parentKey,
+      sortOrder: Number(categoryForm.sortOrder) || 0,
+      active: categoryForm.active !== false,
+    };
+    let ok = false;
+    if (editingCategoryKey) {
+      ok = await onUpdateCategory(editingCategoryKey, {
+        label: payload.label, emoji: payload.emoji, description: payload.description,
+        color1: payload.color1, color2: payload.color2, parentKey: payload.parentKey,
+        sortOrder: payload.sortOrder, active: payload.active,
+      });
+    } else {
+      ok = await onCreateCategory(payload);
+    }
+    setSavingCategory(false);
+    if (ok) { setShowCategoryModal(false); setCategoryForm(emptyCategoryForm); setEditingCategoryKey(null); }
+  };
+  const handleDeleteCategoryClick = async (cat: CategoryInfo | SubcategoryInfo) => {
+    if (!confirm(`¿Borrar la categoría "${cat.label}"? Esta acción no se puede deshacer.`)) return;
+    await onDeleteCategory(cat.key);
+  };
+
   // ========== TABS CONFIG ==========
   const tabs: { key: AdminTab; label: string; icon: React.ReactNode; badge?: string }[] = [
     { key: 'dashboard', label: 'Dashboard', icon: <BarChart3 size={16} /> },
     { key: 'products', label: 'Productos', icon: <Package size={16} />, badge: `${products.length}` },
+    { key: 'categories', label: 'Categorías', icon: <Tag size={16} />, badge: `${categories.length}` },
     { key: 'clients', label: 'Clientes', icon: <Users size={16} />, badge: clients.length > 0 ? `${clients.length}` : undefined },
     { key: 'orders', label: 'Pedidos', icon: <ShoppingBag size={16} />, badge: orders.length > 0 ? `${orders.length}` : undefined },
     { key: 'bugs', label: 'Bug Reports', icon: <Bug size={16} />, badge: bugs.filter(b => b.status === 'open').length > 0 ? `${bugs.filter(b => b.status === 'open').length}` : undefined },
@@ -572,6 +649,72 @@ export default function AdminPanel({
         </div>
       )}
 
+      {/* ======== CATEGORÍAS TAB ======== */}
+      {adminTab === 'categories' && (
+        <div className="space-y-4">
+          <div className="flex items-center justify-between gap-3 flex-wrap">
+            <div>
+              <p className="text-sm font-semibold text-slate-700">Categorías y subcategorías</p>
+              <p className="text-xs text-slate-400">
+                {categories.length} categoría{categories.length !== 1 ? 's' : ''} · {subcategories.length} subcategoría{subcategories.length !== 1 ? 's' : ''}
+              </p>
+            </div>
+            <button onClick={() => openCreateCategory(null)}
+              className="flex items-center gap-2 px-5 py-2.5 bg-emerald-500 text-white rounded-xl text-sm font-semibold hover:bg-emerald-600 transition-colors cursor-pointer whitespace-nowrap shadow-sm">
+              <Plus size={16} /> Nueva categoría
+            </button>
+          </div>
+
+          <div className="space-y-3">
+            {categories.map(cat => {
+              const catSubs = subcategories.filter(s => s.parentKey === cat.key);
+              const prodCount = products.filter(p => p.category === cat.key).length;
+              return (
+                <div key={cat.key} className="bg-white rounded-2xl border border-slate-100 shadow-sm overflow-hidden">
+                  <div className="flex items-center gap-4 p-4">
+                    <div className="w-14 h-14 rounded-xl flex items-center justify-center text-2xl shrink-0" style={{ backgroundImage: categoryGradient(cat) }}>
+                      <span className="drop-shadow">{cat.emoji || '🏷️'}</span>
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-center gap-2">
+                        <p className="font-semibold text-slate-800 truncate">{cat.label}</p>
+                        {cat.active === false && <span className="text-[10px] bg-slate-100 text-slate-500 px-2 py-0.5 rounded-full font-semibold uppercase">Oculta</span>}
+                      </div>
+                      <p className="text-xs text-slate-400 truncate font-mono">{cat.key} · {prodCount} producto{prodCount !== 1 ? 's' : ''} · {catSubs.length} subcat.</p>
+                    </div>
+                    <div className="flex items-center gap-1 shrink-0">
+                      <button onClick={() => openCreateCategory(cat.key)} title="Agregar subcategoría"
+                        className="p-2 rounded-lg text-slate-400 hover:text-emerald-600 hover:bg-emerald-50 transition-colors cursor-pointer"><Plus size={16} /></button>
+                      <button onClick={() => openEditCategory(cat)} title="Editar"
+                        className="p-2 rounded-lg text-slate-400 hover:text-amber-600 hover:bg-amber-50 transition-colors cursor-pointer"><Pencil size={16} /></button>
+                      <button onClick={() => handleDeleteCategoryClick(cat)} title="Borrar"
+                        className="p-2 rounded-lg text-slate-400 hover:text-red-600 hover:bg-red-50 transition-colors cursor-pointer"><Trash2 size={16} /></button>
+                    </div>
+                  </div>
+                  {catSubs.length > 0 && (
+                    <div className="border-t border-slate-50 px-4 py-3 flex flex-wrap gap-2 bg-slate-50/40">
+                      {catSubs.map(sub => (
+                        <span key={sub.key} className="inline-flex items-center gap-1.5 bg-white border border-slate-200 rounded-full pl-3 pr-1 py-1 text-xs text-slate-600 shadow-sm">
+                          <span>{sub.emoji} {sub.label}</span>
+                          <button onClick={() => openEditCategory(sub)} className="p-1 rounded-full text-slate-300 hover:text-amber-600 hover:bg-amber-50 cursor-pointer"><Pencil size={12} /></button>
+                          <button onClick={() => handleDeleteCategoryClick(sub)} className="p-1 rounded-full text-slate-300 hover:text-red-600 hover:bg-red-50 cursor-pointer"><Trash2 size={12} /></button>
+                        </span>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              );
+            })}
+            {categories.length === 0 && (
+              <div className="text-center py-16 text-slate-400 bg-white rounded-2xl border border-slate-100">
+                <Tag size={32} className="mx-auto mb-3 opacity-40" />
+                <p className="text-sm font-medium">Aún no hay categorías</p>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+
       {/* ======== PRODUCTS TAB ======== */}
       {adminTab === 'products' && (
         <div className="space-y-4">
@@ -590,7 +733,7 @@ export default function AdminPanel({
             <select value={filterCategory} onChange={e => setFilterCategory(e.target.value)}
               className="px-4 py-2.5 rounded-xl border border-slate-200 text-sm bg-white cursor-pointer focus:ring-2 focus:ring-amber-400/50">
               <option value="all">Todas las categorías</option>
-              {CATEGORIES.map(cat => <option key={cat.key} value={cat.key}>{cat.emoji} {cat.label}</option>)}
+              {categories.map(cat => <option key={cat.key} value={cat.key}>{cat.emoji} {cat.label}</option>)}
             </select>
             <select value={filterActive} onChange={e => setFilterActive(e.target.value)}
               className="px-4 py-2.5 rounded-xl border border-slate-200 text-sm bg-white cursor-pointer focus:ring-2 focus:ring-amber-400/50">
@@ -650,7 +793,7 @@ export default function AdminPanel({
                       </td>
                       <td className="px-4 py-3">
                         <span className="inline-flex items-center gap-1 text-xs bg-slate-100 text-slate-600 px-2.5 py-1 rounded-full font-medium">
-                          {CATEGORIES.find(c => c.key === product.category)?.emoji} {CATEGORIES.find(c => c.key === product.category)?.label}
+                          {categories.find(c => c.key === product.category)?.emoji} {categories.find(c => c.key === product.category)?.label}
                         </span>
                       </td>
                       <td className="px-4 py-3 text-right">
@@ -1178,7 +1321,7 @@ export default function AdminPanel({
                 <button onClick={closeEditModal} className="p-2 hover:bg-slate-100 rounded-lg cursor-pointer"><X size={18} /></button>
               </div>
               <div className="p-6">
-                <ProductFormFields form={editForm} onChange={setEditForm} />
+                <ProductFormFields form={editForm} onChange={setEditForm} categories={categories} subcategories={subcategories} />
                 {saveMsg && (
                   <div className={`mt-4 p-3 rounded-xl text-sm font-medium ${saveMsg.type === 'ok' ? 'bg-emerald-50 text-emerald-700' : 'bg-red-50 text-red-600'}`}>
                     {saveMsg.text}
@@ -1216,7 +1359,7 @@ export default function AdminPanel({
                 <button onClick={() => setShowAddModal(false)} className="p-2 hover:bg-slate-100 rounded-lg cursor-pointer"><X size={18} /></button>
               </div>
               <div className="p-6">
-                <ProductFormFields form={newProduct} onChange={setNewProduct} isNew />
+                <ProductFormFields form={newProduct} onChange={setNewProduct} isNew categories={categories} subcategories={subcategories} />
                 <div className="flex gap-3 justify-end mt-6">
                   <button onClick={() => setShowAddModal(false)} className="px-5 py-2.5 text-sm text-slate-500 hover:text-slate-700 border border-slate-200 rounded-xl cursor-pointer">Cancelar</button>
                   <button onClick={handleCreateProduct} disabled={saving}
@@ -1224,6 +1367,109 @@ export default function AdminPanel({
                     <Plus size={15} /> {saving ? 'Creando...' : 'Crear producto'}
                   </button>
                 </div>
+              </div>
+            </motion.div>
+          </motion.div>
+        )}
+
+        {/* Modal: crear/editar categoría */}
+        {showCategoryModal && (
+          <motion.div
+            initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
+            className="fixed inset-0 z-50 bg-black/40 backdrop-blur-sm flex items-center justify-center p-4"
+            onClick={() => setShowCategoryModal(false)}
+          >
+            <motion.div
+              initial={{ scale: 0.95, opacity: 0 }} animate={{ scale: 1, opacity: 1 }} exit={{ scale: 0.95, opacity: 0 }}
+              onClick={e => e.stopPropagation()}
+              className="bg-white rounded-2xl shadow-xl w-full max-w-lg max-h-[90vh] overflow-y-auto"
+            >
+              <div className="flex items-center justify-between px-6 py-4 border-b border-slate-100 sticky top-0 bg-white z-10">
+                <h3 className="font-bold text-lg text-slate-800">
+                  {editingCategoryKey ? 'Editar categoría' : (categoryForm.parentKey ? 'Nueva subcategoría' : 'Nueva categoría')}
+                </h3>
+                <button onClick={() => setShowCategoryModal(false)} className="p-2 hover:bg-slate-100 rounded-lg cursor-pointer"><X size={18} /></button>
+              </div>
+              <div className="p-6 space-y-4">
+                {/* Nombre + emoji */}
+                <div className="flex gap-3">
+                  <div className="flex-1">
+                    <label className="text-[10px] font-semibold text-slate-500 uppercase tracking-wider block mb-1">Nombre *</label>
+                    <input type="text" value={categoryForm.label || ''} onChange={e => setCategoryForm({ ...categoryForm, label: e.target.value })}
+                      placeholder="Ej: San Valentín" className="w-full px-4 py-2.5 rounded-xl border border-slate-200 text-sm focus:outline-none focus:ring-2 focus:ring-amber-400/50" />
+                  </div>
+                  <div className="w-20">
+                    <label className="text-[10px] font-semibold text-slate-500 uppercase tracking-wider block mb-1">Emoji</label>
+                    <input type="text" value={categoryForm.emoji || ''} onChange={e => setCategoryForm({ ...categoryForm, emoji: e.target.value })}
+                      placeholder="💝" maxLength={4} className="w-full px-3 py-2.5 rounded-xl border border-slate-200 text-center text-lg focus:outline-none focus:ring-2 focus:ring-amber-400/50" />
+                  </div>
+                </div>
+
+                {/* Tipo (principal / subcategoría) */}
+                <div>
+                  <label className="text-[10px] font-semibold text-slate-500 uppercase tracking-wider block mb-1">Tipo</label>
+                  <select value={categoryForm.parentKey || ''} onChange={e => setCategoryForm({ ...categoryForm, parentKey: e.target.value || null })}
+                    disabled={!!editingCategoryKey}
+                    className="w-full px-4 py-2.5 rounded-xl border border-slate-200 text-sm bg-white cursor-pointer focus:ring-2 focus:ring-amber-400/50 disabled:opacity-60 disabled:cursor-not-allowed">
+                    <option value="">Categoría principal</option>
+                    {categories.filter(c => c.key !== editingCategoryKey).map(c => (
+                      <option key={c.key} value={c.key}>Subcategoría de: {c.emoji} {c.label}</option>
+                    ))}
+                  </select>
+                  {editingCategoryKey && <p className="text-[10px] text-slate-400 mt-1">El tipo no se puede cambiar al editar.</p>}
+                </div>
+
+                {/* Descripción y colores: solo para categorías principales (las subcats heredan el color) */}
+                {!categoryForm.parentKey && (
+                  <>
+                    <div>
+                      <label className="text-[10px] font-semibold text-slate-500 uppercase tracking-wider block mb-1">Descripción</label>
+                      <textarea value={categoryForm.description || ''} onChange={e => setCategoryForm({ ...categoryForm, description: e.target.value })}
+                        rows={2} placeholder="Texto que aparece bajo el título de la sección"
+                        className="w-full px-4 py-2.5 rounded-xl border border-slate-200 text-sm resize-none focus:outline-none focus:ring-2 focus:ring-amber-400/50" />
+                    </div>
+                    <div>
+                      <label className="text-[10px] font-semibold text-slate-500 uppercase tracking-wider block mb-1">Colores del tema</label>
+                      <div className="flex items-center gap-4">
+                        <label className="flex items-center gap-2 cursor-pointer">
+                          <input type="color" value={categoryForm.color1 || '#E91E63'} onChange={e => setCategoryForm({ ...categoryForm, color1: e.target.value })}
+                            className="w-10 h-10 rounded-lg border border-slate-200 cursor-pointer bg-white" />
+                          <span className="text-xs text-slate-500">Inicio</span>
+                        </label>
+                        <label className="flex items-center gap-2 cursor-pointer">
+                          <input type="color" value={categoryForm.color2 || '#9C27B0'} onChange={e => setCategoryForm({ ...categoryForm, color2: e.target.value })}
+                            className="w-10 h-10 rounded-lg border border-slate-200 cursor-pointer bg-white" />
+                          <span className="text-xs text-slate-500">Fin</span>
+                        </label>
+                      </div>
+                      <div className="mt-3 rounded-xl px-4 py-4 flex items-center gap-3" style={{ backgroundImage: categoryGradient(categoryForm) }}>
+                        <span className="text-2xl drop-shadow">{categoryForm.emoji || '🏷️'}</span>
+                        <span className="text-white font-heading font-bold drop-shadow">{categoryForm.label || 'Vista previa'}</span>
+                      </div>
+                    </div>
+                  </>
+                )}
+
+                {/* Orden + visible */}
+                <div className="flex items-center gap-6">
+                  <div>
+                    <label className="text-[10px] font-semibold text-slate-500 uppercase tracking-wider block mb-1">Orden</label>
+                    <input type="number" value={categoryForm.sortOrder ?? 0} onChange={e => setCategoryForm({ ...categoryForm, sortOrder: Number(e.target.value) })}
+                      className="w-24 px-3 py-2.5 rounded-xl border border-slate-200 text-sm focus:outline-none focus:ring-2 focus:ring-amber-400/50" />
+                  </div>
+                  <label className="flex items-center gap-2 cursor-pointer mt-5">
+                    <input type="checkbox" checked={categoryForm.active !== false} onChange={e => setCategoryForm({ ...categoryForm, active: e.target.checked })}
+                      className="rounded border-slate-300 text-amber-500 focus:ring-amber-400" />
+                    <span className="text-sm text-slate-600">Visible en la tienda</span>
+                  </label>
+                </div>
+              </div>
+              <div className="flex gap-3 justify-end px-6 py-4 border-t border-slate-100 sticky bottom-0 bg-white">
+                <button onClick={() => setShowCategoryModal(false)} className="px-5 py-2.5 text-sm text-slate-500 hover:text-slate-700 border border-slate-200 rounded-xl cursor-pointer">Cancelar</button>
+                <button onClick={handleSaveCategory} disabled={savingCategory}
+                  className="flex items-center gap-2 px-6 py-2.5 bg-emerald-500 text-white rounded-xl text-sm font-semibold hover:bg-emerald-600 disabled:opacity-50 cursor-pointer shadow-sm">
+                  <Save size={15} /> {savingCategory ? 'Guardando...' : (editingCategoryKey ? 'Guardar' : 'Crear')}
+                </button>
               </div>
             </motion.div>
           </motion.div>
@@ -1238,10 +1484,14 @@ function ProductFormFields({
   form,
   onChange,
   isNew,
+  categories,
+  subcategories,
 }: {
   form: Partial<Product>;
   onChange: (form: Partial<Product>) => void;
   isNew?: boolean;
+  categories: CategoryInfo[];
+  subcategories: SubcategoryInfo[];
 }) {
   const imageUrl = form.images?.[0] || '';
 
@@ -1261,18 +1511,18 @@ function ProductFormFields({
       </div>
       <div>
         <label className="text-[10px] font-semibold text-slate-500 uppercase tracking-wider block mb-1">Categoría *</label>
-        <select value={form.category || 'navidad'} onChange={e => onChange({ ...form, category: e.target.value as ProductCategory, subcategory: undefined })}
+        <select value={form.category || categories[0]?.key || ''} onChange={e => onChange({ ...form, category: e.target.value as ProductCategory, subcategory: undefined })}
           className="w-full px-4 py-2.5 rounded-xl border border-slate-200 text-sm bg-white cursor-pointer focus:ring-2 focus:ring-amber-400/50">
-          {CATEGORIES.map(cat => <option key={cat.key} value={cat.key}>{cat.emoji} {cat.label}</option>)}
+          {categories.map(cat => <option key={cat.key} value={cat.key}>{cat.emoji} {cat.label}</option>)}
         </select>
       </div>
-      {form.category === 'navidad' && (
+      {subcategories.filter(s => s.parentKey === form.category).length > 0 && (
         <div>
-          <label className="text-[10px] font-semibold text-slate-500 uppercase tracking-wider block mb-1">Subcategoria</label>
+          <label className="text-[10px] font-semibold text-slate-500 uppercase tracking-wider block mb-1">Subcategoría</label>
           <select value={form.subcategory || ''} onChange={e => onChange({ ...form, subcategory: (e.target.value || undefined) as NavidadSubcategory | undefined })}
             className="w-full px-4 py-2.5 rounded-xl border border-slate-200 text-sm bg-white cursor-pointer focus:ring-2 focus:ring-amber-400/50">
-            <option value="">Sin subcategoria</option>
-            {NAVIDAD_SUBCATEGORIES.map(sub => <option key={sub.key} value={sub.key}>{sub.emoji} {sub.label}</option>)}
+            <option value="">Sin subcategoría</option>
+            {subcategories.filter(s => s.parentKey === form.category).map(sub => <option key={sub.key} value={sub.key}>{sub.emoji} {sub.label}</option>)}
           </select>
         </div>
       )}

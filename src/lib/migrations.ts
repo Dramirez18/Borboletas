@@ -1,5 +1,5 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
-import { SAMPLE_PRODUCTS } from '../constants';
+import { SAMPLE_PRODUCTS, CATEGORIES, NAVIDAD_SUBCATEGORIES } from '../constants';
 
 export interface Migration {
   id: string;
@@ -306,6 +306,46 @@ $$;
 GRANT EXECUTE ON FUNCTION increment_visits() TO anon, authenticated;`,
     createdAt: '2026-05-28',
   },
+  {
+    id: '009_create_category_table',
+    title: 'Crear tabla Category (categorías dinámicas)',
+    description: 'Tabla de categorías y subcategorías gestionables desde el Admin Panel, con colores personalizados (hex). Suelta los CHECK que fijaban las categorías de Product y siembra las actuales. Re-ejecutable.',
+    sql: `-- Tabla de categorías (jerárquica: parentKey null = principal, si no = subcategoría)
+CREATE TABLE IF NOT EXISTS "Category" (
+  key TEXT PRIMARY KEY,
+  label TEXT NOT NULL,
+  emoji TEXT NOT NULL DEFAULT '',
+  description TEXT NOT NULL DEFAULT '',
+  color1 TEXT NOT NULL DEFAULT '#E91E63',
+  color2 TEXT NOT NULL DEFAULT '#9C27B0',
+  "parentKey" TEXT REFERENCES "Category"(key) ON DELETE CASCADE,
+  "sortOrder" INTEGER NOT NULL DEFAULT 0,
+  active BOOLEAN NOT NULL DEFAULT true,
+  "createdAt" TIMESTAMPTZ DEFAULT NOW(),
+  "updatedAt" TIMESTAMPTZ DEFAULT NOW()
+);
+CREATE INDEX IF NOT EXISTS "Category_parentKey_idx" ON "Category"("parentKey");
+ALTER TABLE "Category" DISABLE ROW LEVEL SECURITY;
+
+-- Liberar los CHECK que congelaban las categorías/subcategorías fijas en Product
+ALTER TABLE "Product" DROP CONSTRAINT IF EXISTS "Product_category_check";
+ALTER TABLE "Product" DROP CONSTRAINT IF EXISTS "Product_subcategory_check";
+
+-- Semilla de las categorías principales y subcategorías actuales (no destructivo)
+INSERT INTO "Category" (key, label, emoji, description, color1, color2, "parentKey", "sortOrder", active) VALUES
+  ('navidad','Época de Navidad','🎄','Decoración navideña artesanal para llenar tu hogar de magia y espíritu navideño','#b91c1c','#15803d',NULL,1,true),
+  ('halloween','Época de Halloween','🎃','Figuras terroríficamente adorables para la noche más divertida del año','#ea580c','#6b21a8',NULL,2,true),
+  ('desayunos_sorpresa','Decoración Desayunos Sorpresa','🎁','Detalles artesanales para sorprender con un desayuno inolvidable','#ec4899','#fbbf24',NULL,3,true),
+  ('lapices_cuadernos','Punteros y Agendas','✏️','Útiles escolares decorados a mano con personajes únicos y coloridos','#3b82f6','#14b8a6',NULL,4,true),
+  ('tejidos','Tejidos','🧶','Piezas tejidas a mano con lana de alta calidad, cada puntada hecha con amor','#fb7185','#8b5cf6',NULL,5,true),
+  ('noel','Papá y Mamá Noel','🎅','','#b91c1c','#15803d','navidad',1,true),
+  ('renos','Renos y Renas','🦌','','#b91c1c','#15803d','navidad',2,true),
+  ('osos_polares','Osos Polares','🐻‍❄️','','#b91c1c','#15803d','navidad',3,true),
+  ('munecos_nieve','Muñecos de Nieve','⛄','','#b91c1c','#15803d','navidad',4,true),
+  ('pie_arbol_cojines','Pie de Árbol y Cojines','🎁','','#b91c1c','#15803d','navidad',5,true)
+ON CONFLICT (key) DO NOTHING;`,
+    createdAt: '2026-08-04',
+  },
 ];
 
 /**
@@ -372,6 +412,56 @@ export async function seedProducts(
     }
 
     // `data` trae solo las filas realmente insertadas (las nuevas).
+    return { success: true, count: data?.length ?? 0 };
+  } catch (err) {
+    return { success: false, count: 0, error: String(err) };
+  }
+}
+
+/**
+ * Siembra las categorías/subcategorías base (constants.ts) en la tabla Category.
+ * Idempotente: upsert con ignoreDuplicates (solo inserta las que faltan).
+ * Requiere que la tabla Category exista (migración 009 aplicada).
+ */
+export async function seedCategories(
+  supabase: SupabaseClient
+): Promise<{ success: boolean; count: number; error?: string }> {
+  try {
+    const now = new Date().toISOString();
+    const mains = CATEGORIES.map((c) => ({
+      key: c.key,
+      label: c.label,
+      emoji: c.emoji,
+      description: c.description,
+      color1: c.color1,
+      color2: c.color2,
+      parentKey: c.parentKey ?? null,
+      sortOrder: c.sortOrder ?? 0,
+      active: c.active ?? true,
+      updatedAt: now,
+    }));
+    const subs = NAVIDAD_SUBCATEGORIES.map((s) => {
+      const parent = CATEGORIES.find((c) => c.key === s.parentKey);
+      return {
+        key: s.key,
+        label: s.label,
+        emoji: s.emoji,
+        description: '',
+        color1: parent?.color1 ?? '#E91E63',
+        color2: parent?.color2 ?? '#9C27B0',
+        parentKey: s.parentKey,
+        sortOrder: s.sortOrder ?? 0,
+        active: true,
+        updatedAt: now,
+      };
+    });
+    const { data, error } = await supabase
+      .from('Category')
+      .upsert([...mains, ...subs], { onConflict: 'key', ignoreDuplicates: true })
+      .select('key');
+    if (error) {
+      return { success: false, count: 0, error: error.message };
+    }
     return { success: true, count: data?.length ?? 0 };
   } catch (err) {
     return { success: false, count: 0, error: String(err) };

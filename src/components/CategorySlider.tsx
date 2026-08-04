@@ -2,6 +2,7 @@ import { useRef } from 'react';
 import { ChevronLeft, ChevronRight } from 'lucide-react';
 import type { Product } from '../types';
 import type { CategoryInfo } from '../types';
+import { categoryGradient } from '../constants';
 import ProductCard from './ProductCard';
 
 interface CategorySliderProps {
@@ -34,8 +35,8 @@ export default function CategorySlider({
     <section className="pt-10 pb-8">
       <div className="max-w-[1400px] mx-auto px-4 sm:px-8 lg:px-12">
 
-        {/* Header con gradiente tematico */}
-        <div className={`bg-gradient-to-r ${category.gradient} rounded-2xl px-6 sm:px-10 py-6 mb-8`}>
+        {/* Header con gradiente tematico (colores personalizados de la categoría) */}
+        <div style={{ backgroundImage: categoryGradient(category) }} className="rounded-2xl px-6 sm:px-10 py-6 mb-8">
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-5">
               <span className="text-5xl drop-shadow-lg">{category.emoji}</span>

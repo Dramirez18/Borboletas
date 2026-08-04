@@ -1,21 +1,16 @@
-export type ProductCategory =
-  | 'navidad'
-  | 'halloween'
-  | 'desayunos_sorpresa'
-  | 'lapices_cuadernos'
-  | 'tejidos';
-
-export type NavidadSubcategory =
-  | 'noel'
-  | 'renos'
-  | 'osos_polares'
-  | 'pie_arbol_cojines'
-  | 'munecos_nieve';
+// Categorías y subcategorías son DINÁMICAS (se gestionan desde el Admin Panel),
+// por eso son strings libres. Los valores base viven en constants.ts (fallback)
+// y en la tabla Category de Supabase.
+export type ProductCategory = string;
+export type NavidadSubcategory = string;
+export type Subcategory = string;
 
 export interface SubcategoryInfo {
   key: NavidadSubcategory;
   label: string;
   emoji: string;
+  parentKey: string;        // categoría principal a la que pertenece
+  sortOrder?: number;
 }
 
 export interface Product {
@@ -133,6 +128,9 @@ export interface CategoryInfo {
   label: string;
   emoji: string;
   description: string;
-  gradient: string;
-  accentColor: string;
+  color1: string;              // inicio del gradiente (hex, ej. '#b91c1c')
+  color2: string;              // fin del gradiente (hex)
+  parentKey?: string | null;   // null/undefined = categoría principal
+  sortOrder?: number;
+  active?: boolean;
 }

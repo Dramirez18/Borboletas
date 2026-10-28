@@ -29,3 +29,7 @@ scripts/optimized/
 # Assets fuente del logo (los derivados se suben a Supabase Storage)
 Logo-completo.png
 _preview-*.png
+
+# Documentos internos para agentes IA: contienen datos del proyecto y se mantienen solo en local
+/CLAUDE.md
+/AGENTS.md

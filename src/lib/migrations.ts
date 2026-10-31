@@ -187,13 +187,15 @@ ALTER TABLE "OrderItem" DISABLE ROW LEVEL SECURITY;`,
   {
     id: '008_enable_rls_policies',
     title: 'Habilitar RLS con políticas de seguridad',
-    description: 'Activa Row Level Security en todas las tablas. La anon key deja de dar acceso total: catálogo público, datos de cada cliente solo para su dueño, escritura de productos solo admin. Requiere auth real (Email OTP). Re-ejecutable.',
+    description: 'Activa Row Level Security en todas las tablas. La anon key deja de dar acceso total: catálogo público, datos de cada cliente solo para su dueño, escritura de productos solo admin. Incluye el endurecimiento: nadie puede darse rol de administrador y el rol anónimo no toca las tablas de clientes, pedidos ni reportes. Requiere auth real (Email OTP). Re-ejecutable.',
     sql: `-- ============================================================
 -- Migración 008: Habilitar Row Level Security (RLS) + políticas
 -- ============================================================
 -- Protege la base: la anon key (pública en el bundle JS) ya NO da
 -- acceso total. Cada tabla define quién puede leer/escribir.
--- Usa el auth real (Email OTP) vía auth.email().
+-- Usa el auth real (Email OTP) vía el correo del JWT.
+-- Incluye el endurecimiento: un usuario no puede darse rol admin
+-- y el rol anónimo no toca las tablas con datos de clientes.
 -- Re-ejecutable: DROP POLICY IF EXISTS antes de cada CREATE.
 
 -- ---------- Funciones auxiliares (SECURITY DEFINER) ----------
@@ -205,14 +207,14 @@ RETURNS BOOLEAN LANGUAGE sql SECURITY DEFINER SET search_path = public STABLE
 AS $$
   SELECT EXISTS (
     SELECT 1 FROM public."Client"
-    WHERE email = auth.email() AND role = 'admin'
+    WHERE email = (auth.jwt() ->> 'email') AND role = 'admin'
   );
 $$;
 
 CREATE OR REPLACE FUNCTION public.current_client_id()
 RETURNS INTEGER LANGUAGE sql SECURITY DEFINER SET search_path = public STABLE
 AS $$
-  SELECT id FROM public."Client" WHERE email = auth.email() LIMIT 1;
+  SELECT id FROM public."Client" WHERE email = (auth.jwt() ->> 'email') LIMIT 1;
 $$;
 
 GRANT EXECUTE ON FUNCTION public.is_admin() TO anon, authenticated;
@@ -240,15 +242,33 @@ DROP POLICY IF EXISTS "client_insert_own" ON "Client";
 DROP POLICY IF EXISTS "client_update_own_or_admin" ON "Client";
 DROP POLICY IF EXISTS "client_delete_admin" ON "Client";
 CREATE POLICY "client_select_own_or_admin" ON "Client"
-  FOR SELECT TO authenticated USING (email = auth.email() OR public.is_admin());
+  FOR SELECT TO authenticated USING (email = (auth.jwt() ->> 'email') OR public.is_admin());
+-- Solo se puede crear la propia fila y con rol 'user'. Un admin puede crear cualquiera.
 CREATE POLICY "client_insert_own" ON "Client"
-  FOR INSERT TO authenticated WITH CHECK (email = auth.email());
+  FOR INSERT TO authenticated
+  WITH CHECK (((email = (auth.jwt() ->> 'email')) AND role = 'user') OR public.is_admin());
 CREATE POLICY "client_update_own_or_admin" ON "Client"
   FOR UPDATE TO authenticated
-  USING (email = auth.email() OR public.is_admin())
-  WITH CHECK (email = auth.email() OR public.is_admin());
+  USING (email = (auth.jwt() ->> 'email') OR public.is_admin())
+  WITH CHECK (email = (auth.jwt() ->> 'email') OR public.is_admin());
 CREATE POLICY "client_delete_admin" ON "Client"
   FOR DELETE TO authenticated USING (public.is_admin());
+
+-- Un usuario normal no puede cambiarse el rol al actualizar su fila.
+CREATE OR REPLACE FUNCTION public.protect_client_role()
+RETURNS trigger LANGUAGE plpgsql SECURITY DEFINER SET search_path = public
+AS $$
+DECLARE claim_role text := COALESCE((NULLIF(current_setting('request.jwt.claims', true), '')::jsonb) ->> 'role', '');
+BEGIN
+  IF claim_role = 'authenticated' AND NEW.role IS DISTINCT FROM OLD.role AND NOT public.is_admin() THEN
+    NEW.role := OLD.role;
+  END IF;
+  RETURN NEW;
+END;
+$$;
+DROP TRIGGER IF EXISTS client_protect_role ON "Client";
+CREATE TRIGGER client_protect_role BEFORE UPDATE ON "Client"
+  FOR EACH ROW EXECUTE FUNCTION public.protect_client_role();
 
 -- ---------- ORDER: cada cliente sus pedidos; admin ve todo ----------
 ALTER TABLE "Order" ENABLE ROW LEVEL SECURITY;
@@ -303,13 +323,17 @@ BEGIN
   RETURN new_count;
 END;
 $$;
-GRANT EXECUTE ON FUNCTION increment_visits() TO anon, authenticated;`,
+GRANT EXECUTE ON FUNCTION increment_visits() TO anon, authenticated;
+
+-- El rol anónimo no necesita tocar las tablas con datos de clientes.
+REVOKE ALL ON TABLE "Client", "Order", "OrderItem", "BugReport" FROM anon;
+REVOKE ALL ON SEQUENCE "Client_id_seq", "Order_id_seq", "OrderItem_id_seq", "BugReport_id_seq" FROM anon;`,
     createdAt: '2026-05-28',
   },
   {
     id: '009_create_category_table',
     title: 'Crear tabla Category (categorías dinámicas)',
-    description: 'Tabla de categorías y subcategorías gestionables desde el Admin Panel, con colores personalizados (hex). Suelta los CHECK que fijaban las categorías de Product y siembra las actuales. Re-ejecutable.',
+    description: 'Tabla de categorías y subcategorías gestionables desde el Admin Panel, con colores personalizados (hex). Suelta los CHECK que fijaban las categorías de Product, siembra las actuales y activa RLS: lectura pública y escritura solo para administradores (requiere la 008). Re-ejecutable.',
     sql: `-- Tabla de categorías (jerárquica: parentKey null = principal, si no = subcategoría)
 CREATE TABLE IF NOT EXISTS "Category" (
   key TEXT PRIMARY KEY,
@@ -325,7 +349,16 @@ CREATE TABLE IF NOT EXISTS "Category" (
   "updatedAt" TIMESTAMPTZ DEFAULT NOW()
 );
 CREATE INDEX IF NOT EXISTS "Category_parentKey_idx" ON "Category"("parentKey");
-ALTER TABLE "Category" DISABLE ROW LEVEL SECURITY;
+-- Lectura pública; escritura solo para administradores (requiere la migración 008).
+ALTER TABLE "Category" ENABLE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS "category_public_read" ON "Category";
+DROP POLICY IF EXISTS "category_admin_insert" ON "Category";
+DROP POLICY IF EXISTS "category_admin_update" ON "Category";
+DROP POLICY IF EXISTS "category_admin_delete" ON "Category";
+CREATE POLICY "category_public_read" ON "Category" FOR SELECT TO public USING (true);
+CREATE POLICY "category_admin_insert" ON "Category" FOR INSERT TO authenticated WITH CHECK (public.is_admin());
+CREATE POLICY "category_admin_update" ON "Category" FOR UPDATE TO authenticated USING (public.is_admin()) WITH CHECK (public.is_admin());
+CREATE POLICY "category_admin_delete" ON "Category" FOR DELETE TO authenticated USING (public.is_admin());
 
 -- Liberar los CHECK que congelaban las categorías/subcategorías fijas en Product
 ALTER TABLE "Product" DROP CONSTRAINT IF EXISTS "Product_category_check";

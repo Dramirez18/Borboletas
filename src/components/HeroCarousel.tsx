@@ -249,7 +249,7 @@ export default function HeroCarousel({ onNavigate, onSelectCategory }: HeroCarou
                     onError={(e) => { (e.target as HTMLImageElement).src = PLACEHOLDER_IMAGE; }}
                     className="relative w-full h-full object-contain drop-shadow-[0_18px_28px_rgba(0,0,0,0.38)]"
                   />
-                  <div className={`absolute -bottom-1 left-1 sm:-left-2 bg-white rounded-full pl-2 pr-4 py-1.5 shadow-lg flex items-center gap-1.5 ${slide.accent}`}>
+                  <div className={`absolute -bottom-1 left-1/2 -translate-x-1/2 whitespace-nowrap bg-white rounded-full pl-2 pr-4 py-1.5 shadow-lg flex items-center gap-1.5 ${slide.accent}`}>
                     <span className="w-7 h-7 rounded-full bg-current/10 flex items-center justify-center">
                       <Star className={`w-4 h-4 ${slide.accent} fill-current`} />
                     </span>

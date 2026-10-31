@@ -346,6 +346,36 @@ INSERT INTO "Category" (key, label, emoji, description, color1, color2, "parentK
 ON CONFLICT (key) DO NOTHING;`,
     createdAt: '2026-08-04',
   },
+  {
+    id: '010_storage_admin_uploads',
+    title: 'Subir fotos de productos desde el panel (Storage)',
+    description: 'Permite que los administradores suban, cambien y borren fotos del bucket productos desde el panel, con la galería o la cámara del celular. La lectura pública de las fotos no cambia. Limita el bucket a fotos WebP o JPEG de hasta 3 MB. Requiere la migración 008. Re-ejecutable.',
+    sql: `-- Solo los administradores escriben en el bucket de fotos. La lectura pública de las fotos no cambia porque el bucket es público.
+DROP POLICY IF EXISTS "productos_admin_select" ON storage.objects;
+DROP POLICY IF EXISTS "productos_admin_insert" ON storage.objects;
+DROP POLICY IF EXISTS "productos_admin_update" ON storage.objects;
+DROP POLICY IF EXISTS "productos_admin_delete" ON storage.objects;
+CREATE POLICY "productos_admin_select" ON storage.objects
+  FOR SELECT TO authenticated
+  USING (bucket_id = 'productos' AND public.is_admin());
+CREATE POLICY "productos_admin_insert" ON storage.objects
+  FOR INSERT TO authenticated
+  WITH CHECK (bucket_id = 'productos' AND public.is_admin());
+CREATE POLICY "productos_admin_update" ON storage.objects
+  FOR UPDATE TO authenticated
+  USING (bucket_id = 'productos' AND public.is_admin())
+  WITH CHECK (bucket_id = 'productos' AND public.is_admin());
+CREATE POLICY "productos_admin_delete" ON storage.objects
+  FOR DELETE TO authenticated
+  USING (bucket_id = 'productos' AND public.is_admin());
+
+-- El bucket solo acepta fotos livianas: el panel las reduce a WebP o JPEG antes de subirlas.
+UPDATE storage.buckets
+SET file_size_limit = 3145728,
+    allowed_mime_types = ARRAY['image/webp', 'image/jpeg']
+WHERE id = 'productos';`,
+    createdAt: '2026-10-31',
+  },
 ];
 
 /**

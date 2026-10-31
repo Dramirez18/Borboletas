@@ -1,8 +1,9 @@
-import { useState, useMemo } from 'react';
+import { useState, useMemo, useEffect, useId, useRef, type ChangeEvent } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import type { Product, ProductCategory, NavidadSubcategory, CategoryInfo, SubcategoryInfo, BugReport, BugStatus, BugPriority, ClientRow, OrderRow, OrderItemRow } from '../types';
 import { formatPrice, categoryGradient, slugify } from '../constants';
 import { supabase } from '../lib/supabase';
+import { uploadProductPhoto, PhotoError } from '../lib/uploadImage';
 import {
   MIGRATIONS,
   getAppliedMigrations,
@@ -15,7 +16,7 @@ import {
   ArrowLeft, Plus, Pencil, Trash2, Eye, EyeOff, Save, X, Database,
   BarChart3, Package, Search, ChevronUp, ChevronDown, ChevronRight,
   CheckCircle2, Clock, Copy, Check, AlertTriangle, DollarSign, Bug,
-  Users, ShoppingBag, RefreshCw, Edit3, Tag,
+  Users, ShoppingBag, RefreshCw, Edit3, Tag, Camera, Images, ImagePlus, LoaderCircle,
 } from 'lucide-react';
 
 interface AdminPanelProps {
@@ -93,6 +94,7 @@ export default function AdminPanel({
     images: [], customizable: false, featured: false, active: true,
   });
   const [saving, setSaving] = useState(false);
+  const [uploadingPhoto, setUploadingPhoto] = useState(false);
   const [saveMsg, setSaveMsg] = useState<{ type: 'ok' | 'err'; text: string } | null>(null);
 
   // Categorías tab state
@@ -1321,7 +1323,7 @@ export default function AdminPanel({
                 <button onClick={closeEditModal} className="p-2 hover:bg-slate-100 rounded-lg cursor-pointer"><X size={18} /></button>
               </div>
               <div className="p-6">
-                <ProductFormFields form={editForm} onChange={setEditForm} categories={categories} subcategories={subcategories} />
+                <ProductFormFields form={editForm} onChange={setEditForm} categories={categories} subcategories={subcategories} onUploadingChange={setUploadingPhoto} />
                 {saveMsg && (
                   <div className={`mt-4 p-3 rounded-xl text-sm font-medium ${saveMsg.type === 'ok' ? 'bg-emerald-50 text-emerald-700' : 'bg-red-50 text-red-600'}`}>
                     {saveMsg.text}
@@ -1329,7 +1331,7 @@ export default function AdminPanel({
                 )}
                 <div className="flex gap-3 justify-end mt-6">
                   <button onClick={closeEditModal} className="px-5 py-2.5 text-sm text-slate-500 hover:text-slate-700 border border-slate-200 rounded-xl cursor-pointer">Cancelar</button>
-                  <button onClick={handleSaveEdit} disabled={saving}
+                  <button onClick={handleSaveEdit} disabled={saving || uploadingPhoto}
                     className="flex items-center gap-2 px-6 py-2.5 bg-amber-500 text-white rounded-xl text-sm font-semibold hover:bg-amber-600 disabled:opacity-50 cursor-pointer shadow-sm">
                     <Save size={15} /> {saving ? 'Guardando...' : 'Guardar cambios'}
                   </button>
@@ -1359,10 +1361,10 @@ export default function AdminPanel({
                 <button onClick={() => setShowAddModal(false)} className="p-2 hover:bg-slate-100 rounded-lg cursor-pointer"><X size={18} /></button>
               </div>
               <div className="p-6">
-                <ProductFormFields form={newProduct} onChange={setNewProduct} isNew categories={categories} subcategories={subcategories} />
+                <ProductFormFields form={newProduct} onChange={setNewProduct} isNew categories={categories} subcategories={subcategories} onUploadingChange={setUploadingPhoto} />
                 <div className="flex gap-3 justify-end mt-6">
                   <button onClick={() => setShowAddModal(false)} className="px-5 py-2.5 text-sm text-slate-500 hover:text-slate-700 border border-slate-200 rounded-xl cursor-pointer">Cancelar</button>
-                  <button onClick={handleCreateProduct} disabled={saving}
+                  <button onClick={handleCreateProduct} disabled={saving || uploadingPhoto}
                     className="flex items-center gap-2 px-6 py-2.5 bg-emerald-500 text-white rounded-xl text-sm font-semibold hover:bg-emerald-600 disabled:opacity-50 cursor-pointer shadow-sm">
                     <Plus size={15} /> {saving ? 'Creando...' : 'Crear producto'}
                   </button>
@@ -1486,14 +1488,57 @@ function ProductFormFields({
   isNew,
   categories,
   subcategories,
+  onUploadingChange,
 }: {
   form: Partial<Product>;
   onChange: (form: Partial<Product>) => void;
   isNew?: boolean;
   categories: CategoryInfo[];
   subcategories: SubcategoryInfo[];
+  onUploadingChange?: (busy: boolean) => void;
 }) {
   const imageUrl = form.images?.[0] || '';
+  const photoInputId = useId();
+  const [uploading, setUploading] = useState(false);
+  const [photoError, setPhotoError] = useState('');
+  // La subida tarda unos segundos: al terminar se usa el formulario más reciente, no el de cuando se tocó el botón.
+  const latestForm = useRef(form);
+  useEffect(() => { latestForm.current = form; });
+  const mounted = useRef(true);
+  useEffect(() => {
+    mounted.current = true;
+    return () => {
+      mounted.current = false;
+      onUploadingChange?.(false); // si se cierra el formulario subiendo, libera el botón de guardar
+    };
+  }, [onUploadingChange]);
+
+  // Cambia solo la foto principal (la primera) y conserva las demás si las hubiera.
+  const withMainPhoto = (base: Partial<Product>, url: string): Partial<Product> => {
+    const rest = base.images?.slice(1) ?? [];
+    return { ...base, images: url ? [url, ...rest] : rest };
+  };
+  const removePhoto = () => onChange(withMainPhoto(form, ''));
+
+  const handlePhoto = async (e: ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    e.target.value = ''; // permite volver a elegir la misma foto
+    if (!file) return;
+    if (!supabase) { setPhotoError('Sin conexión a Supabase: no se pueden subir fotos.'); return; }
+    setPhotoError('');
+    setUploading(true);
+    onUploadingChange?.(true);
+    try {
+      const url = await uploadProductPhoto(supabase, file);
+      if (mounted.current) onChange(withMainPhoto(latestForm.current, url));
+    } catch (err) {
+      console.error('[Foto] no se pudo subir', err);
+      if (mounted.current) setPhotoError(err instanceof PhotoError ? err.message : 'No se pudo subir la foto. Inténtalo de nuevo.');
+    } finally {
+      if (mounted.current) setUploading(false);
+      onUploadingChange?.(false);
+    }
+  };
 
   return (
     <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
@@ -1538,14 +1583,47 @@ function ProductFormFields({
           className="w-full px-4 py-2.5 rounded-xl border border-slate-200 text-sm focus:outline-none focus:ring-2 focus:ring-amber-400/50" />
       </div>
       <div className="sm:col-span-2">
-        <label className="text-[10px] font-semibold text-slate-500 uppercase tracking-wider block mb-1">URL de imagen *</label>
-        <input type="url" value={imageUrl} onChange={e => onChange({ ...form, images: [e.target.value] })}
-          placeholder="https://ythsgjjawqzvhewenqex.supabase.co/storage/v1/object/public/productos/....webp"
-          className="w-full px-4 py-2.5 rounded-xl border border-slate-200 text-sm font-mono focus:outline-none focus:ring-2 focus:ring-amber-400/50" />
-        {imageUrl && (
-          <img src={imageUrl} alt="Preview" className="w-20 h-20 rounded-xl object-cover mt-2 border border-slate-200" referrerPolicy="no-referrer"
-            onError={e => { (e.target as HTMLImageElement).style.display = 'none'; }} />
-        )}
+        <label className="text-[10px] font-semibold text-slate-500 uppercase tracking-wider block mb-1">Foto del producto *</label>
+        <div className="flex items-start gap-4">
+          <div className="relative w-28 h-28 sm:w-32 sm:h-32 shrink-0 rounded-2xl border-2 border-dashed border-slate-200 bg-slate-50 overflow-hidden flex items-center justify-center">
+            {imageUrl ? (
+              <img src={imageUrl} alt="Vista previa de la foto" className="w-full h-full object-cover" referrerPolicy="no-referrer"
+                onError={e => { (e.target as HTMLImageElement).style.display = 'none'; }} />
+            ) : (
+              <ImagePlus size={28} className="text-slate-300" />
+            )}
+            {uploading && (
+              <div className="absolute inset-0 bg-white/85 flex flex-col items-center justify-center gap-1 text-xs font-medium text-amber-600">
+                <LoaderCircle size={22} className="animate-spin" /> Subiendo...
+              </div>
+            )}
+          </div>
+          <div className="flex-1 min-w-0">
+            <div className="flex flex-wrap gap-2">
+              <label htmlFor={`${photoInputId}-galeria`}
+                className={`inline-flex items-center gap-2 px-4 py-2.5 rounded-xl bg-amber-500 text-white text-sm font-semibold shadow-sm hover:bg-amber-600 ${uploading ? 'opacity-50 pointer-events-none' : 'cursor-pointer'}`}>
+                <Images size={16} /> Galería
+              </label>
+              <label htmlFor={`${photoInputId}-camara`}
+                className={`inline-flex items-center gap-2 px-4 py-2.5 rounded-xl border border-slate-200 text-slate-600 text-sm font-semibold hover:bg-slate-50 ${uploading ? 'opacity-50 pointer-events-none' : 'cursor-pointer'}`}>
+                <Camera size={16} /> Cámara
+              </label>
+            </div>
+            <input id={`${photoInputId}-galeria`} type="file" accept="image/*" onChange={handlePhoto} disabled={uploading} className="sr-only" />
+            <input id={`${photoInputId}-camara`} type="file" accept="image/*" capture="environment" onChange={handlePhoto} disabled={uploading} className="sr-only" />
+            <p className="text-[11px] text-slate-400 mt-2">Elige una foto de tu galería o tómala ahora. Se ajusta sola para que cargue rápido.</p>
+            {photoError && <p className="text-xs text-red-600 mt-2" role="alert">{photoError}</p>}
+            {imageUrl && !uploading && (
+              <button type="button" onClick={removePhoto} className="mt-2 text-xs text-slate-400 hover:text-red-500 cursor-pointer">Quitar foto</button>
+            )}
+          </div>
+        </div>
+        <details className="mt-3">
+          <summary className="text-xs text-slate-400 cursor-pointer select-none">Usar un enlace en vez de subir una foto</summary>
+          <input type="url" value={imageUrl} onChange={e => onChange(withMainPhoto(form, e.target.value))}
+            placeholder="https://..."
+            className="mt-2 w-full px-4 py-2.5 rounded-xl border border-slate-200 text-sm font-mono focus:outline-none focus:ring-2 focus:ring-amber-400/50" />
+        </details>
       </div>
       <div className="sm:col-span-2 flex items-center gap-6 pt-2">
         <label className="flex items-center gap-2 cursor-pointer">
